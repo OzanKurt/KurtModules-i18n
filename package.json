@@ -1,0 +1,12 @@
+{
+  "name": "laravel-modules-i18n",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npx @tailwindcss/cli -i resources/css/app.css -o resources/dist/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0"
+  }
+}

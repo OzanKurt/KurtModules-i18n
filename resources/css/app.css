@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+@source "../views/**/*.blade.php";
+@source "../js/**/*.js";
+
+/* The SPA mounts here; keep the stable scrollbar gutter so the grid doesn't jump. */
+html {
+    scrollbar-gutter: stable;
+}

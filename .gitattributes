@@ -11,6 +11,6 @@
 /rector.php             export-ignore
 /package.json           export-ignore
 /package-lock.json      export-ignore
-/tailwind.config.js     export-ignore
-/resources/css         export-ignore
-/resources/js          export-ignore
+/scripts                export-ignore
+/resources/css          export-ignore
+/resources/js           export-ignore
