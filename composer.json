@@ -1,0 +1,52 @@
+{
+  "name": "ozankurt/laravel-modules-i18n",
+  "description": "Self-hosted translation-file manager for Laravel — edit JSON and PHP array lang files (including deeply nested keys) through a Tailwind UI.",
+  "keywords": ["laravel", "kurtmodules", "i18n", "translations", "localization"],
+  "license": "MIT",
+  "authors": [{ "name": "Ozan Kurt", "email": "ozankurt2@gmail.com" }],
+  "require": {
+    "php": "^8.4",
+    "illuminate/contracts": "^12.0 || ^13.0",
+    "illuminate/filesystem": "^12.0 || ^13.0",
+    "illuminate/support": "^12.0 || ^13.0",
+    "ozankurt/laravel-modules-core": "^2.0",
+    "spatie/laravel-package-tools": "^1.92"
+  },
+  "require-dev": {
+    "larastan/larastan": "^3.0",
+    "laravel/pint": "^1.18",
+    "orchestra/testbench": "^10.0",
+    "pestphp/pest": "^3.0",
+    "pestphp/pest-plugin-laravel": "^3.0",
+    "rector/rector": "^2.0"
+  },
+  "autoload": {
+    "psr-4": { "Kurt\\Modules\\I18n\\": "src/" }
+  },
+  "autoload-dev": {
+    "psr-4": { "Kurt\\Modules\\I18n\\Tests\\": "tests/" }
+  },
+  "extra": {
+    "laravel": {
+      "providers": ["Kurt\\Modules\\I18n\\Providers\\I18nServiceProvider"]
+    }
+  },
+  "repositories": {
+    "core": { "type": "vcs", "url": "https://github.com/OzanKurt/KurtModules-Core" }
+  },
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/pest",
+    "test:coverage": "vendor/bin/pest --coverage --min=80",
+    "lint": "vendor/bin/pint --test",
+    "format": "vendor/bin/pint",
+    "stan": "vendor/bin/phpstan analyse --memory-limit=2G"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

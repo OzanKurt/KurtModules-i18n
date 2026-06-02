@@ -1,0 +1,135 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Kurt\Modules\I18n\Support;
+
+use Kurt\Modules\I18n\Exceptions\TranslationPathException;
+
+/**
+ * Resolves and guards every translation file path.
+ *
+ * All paths are derived from a single root directory; locale and group names are
+ * validated against a strict character set and the resulting absolute path is
+ * verified to live inside the root, so path traversal is structurally impossible.
+ */
+final class LangPaths
+{
+    private readonly string $root;
+
+    public function __construct(string $root)
+    {
+        $this->root = $this->normalize($root);
+    }
+
+    public function root(): string
+    {
+        return $this->root;
+    }
+
+    public function jsonPath(string $locale): string
+    {
+        $this->guardLocale($locale);
+
+        return $this->within($locale.'.json');
+    }
+
+    public function phpPath(string $group, string $locale): string
+    {
+        $this->guardLocale($locale);
+        $this->guardGroup($group);
+
+        return $this->within($locale.'/'.$group.'.php');
+    }
+
+    public function assertSafe(string $absolute): void
+    {
+        $normalized = $this->normalize($absolute);
+
+        if ($normalized !== $this->root && ! str_starts_with($normalized, $this->root.'/')) {
+            throw TranslationPathException::outsideRoot($absolute);
+        }
+    }
+
+    public function relative(string $absolute): string
+    {
+        $this->assertSafe($absolute);
+
+        return ltrim(substr($this->normalize($absolute), strlen($this->root)), '/');
+    }
+
+    public static function isValidLocale(string $locale): bool
+    {
+        return $locale !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $locale) === 1;
+    }
+
+    public static function isValidGroup(string $group): bool
+    {
+        if ($group === '' || str_contains($group, '\\')) {
+            return false;
+        }
+
+        foreach (explode('/', $group) as $segment) {
+            if (preg_match('/^[A-Za-z0-9_-]+$/', $segment) !== 1) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function guardLocale(string $locale): void
+    {
+        if (! self::isValidLocale($locale)) {
+            throw TranslationPathException::invalidLocale($locale);
+        }
+    }
+
+    private function guardGroup(string $group): void
+    {
+        if (! self::isValidGroup($group)) {
+            throw TranslationPathException::invalidGroup($group);
+        }
+    }
+
+    private function within(string $relative): string
+    {
+        $candidate = $this->normalize($this->root.'/'.$relative);
+
+        $this->assertSafe($candidate);
+
+        return $candidate;
+    }
+
+    private function normalize(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+
+        $isUnixAbsolute = str_starts_with($path, '/');
+        $isWindowsAbsolute = preg_match('#^[A-Za-z]:/#', $path) === 1;
+
+        $segments = [];
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                array_pop($segments);
+
+                continue;
+            }
+
+            $segments[] = $segment;
+        }
+
+        $joined = implode('/', $segments);
+
+        if ($isUnixAbsolute && ! $isWindowsAbsolute) {
+            $joined = '/'.$joined;
+        }
+
+        return rtrim($joined, '/');
+    }
+}

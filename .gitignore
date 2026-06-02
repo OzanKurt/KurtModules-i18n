@@ -1,0 +1,7 @@
+/vendor
+/build
+/node_modules
+.phpunit.result.cache
+composer.lock.bak
+.idea
+.phpstorm.meta.php
