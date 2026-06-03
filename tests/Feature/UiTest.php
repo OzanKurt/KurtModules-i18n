@@ -18,6 +18,6 @@ afterEach(function (): void {
 it('renders the ui shell with bootstrap data when authorized', function (): void {
     $this->get('/i18n')
         ->assertOk()
-        ->assertSee('id="i18n-app"', false)
+        ->assertSee('id="view"', false)
         ->assertSee('id="i18n-bootstrap"', false);
 });
