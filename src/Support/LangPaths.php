@@ -37,6 +37,17 @@ final class LangPaths
     public function phpPath(string $group, string $locale): string
     {
         $this->guardLocale($locale);
+
+        // Namespaced vendor group "{package}::{group}" maps to
+        // lang/vendor/{package}/{locale}/{group}.php (Laravel's package translations).
+        if (str_contains($group, '::')) {
+            [$package, $inner] = explode('::', $group, 2);
+            $this->guardPackage($package);
+            $this->guardGroup($inner);
+
+            return $this->within('vendor/'.$package.'/'.$locale.'/'.$inner.'.php');
+        }
+
         $this->guardGroup($group);
 
         return $this->within($locale.'/'.$group.'.php');
@@ -78,6 +89,23 @@ final class LangPaths
         return true;
     }
 
+    public static function isValidPackage(string $package): bool
+    {
+        return $package !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $package) === 1;
+    }
+
+    /** Accepts a plain group ("auth", "admin/users") or a namespaced one ("firewall::notifications"). */
+    public static function isValidGroupRef(string $ref): bool
+    {
+        if (str_contains($ref, '::')) {
+            [$package, $inner] = explode('::', $ref, 2);
+
+            return self::isValidPackage($package) && self::isValidGroup($inner);
+        }
+
+        return self::isValidGroup($ref);
+    }
+
     private function guardLocale(string $locale): void
     {
         if (! self::isValidLocale($locale)) {
@@ -89,6 +117,13 @@ final class LangPaths
     {
         if (! self::isValidGroup($group)) {
             throw TranslationPathException::invalidGroup($group);
+        }
+    }
+
+    private function guardPackage(string $package): void
+    {
+        if (! self::isValidPackage($package)) {
+            throw TranslationPathException::invalidGroup($package);
         }
     }
 

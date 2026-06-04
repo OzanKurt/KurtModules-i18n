@@ -16,7 +16,7 @@ final class PhpGroupController extends ApiController
 {
     public function show(Request $request, TranslationManager $manager, string $group): JsonResponse
     {
-        abort_unless(LangPaths::isValidGroup($group), 422, "Invalid group [{$group}].");
+        abort_unless(LangPaths::isValidGroupRef($group), 422, "Invalid group [{$group}].");
 
         return response()->json(
             $manager->grid(FileType::Php, $group, $this->localesFromRequest($request, $manager))
@@ -25,7 +25,7 @@ final class PhpGroupController extends ApiController
 
     public function update(ApplyEditsRequest $request, TranslationManager $manager, string $group): JsonResponse
     {
-        abort_unless(LangPaths::isValidGroup($group), 422, "Invalid group [{$group}].");
+        abort_unless(LangPaths::isValidGroupRef($group), 422, "Invalid group [{$group}].");
 
         return $this->save(fn (): array => $manager->apply(
             FileType::Php,

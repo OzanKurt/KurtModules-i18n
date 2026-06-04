@@ -49,6 +49,9 @@ body{
 .crumbs .iconbtn{margin-right:4px}
 .crumbs .sep{color:var(--faint)}
 .crumbs .here{color:var(--text); font-weight:600}
+.crumbs .crumblink{font:inherit; font-size:13.5px; color:var(--muted); background:none; border:0; padding:0; cursor:pointer; transition:color .15s var(--ease)}
+.crumbs .crumblink:hover{color:var(--text)}
+.crumbs .crumblink:focus-visible{outline:none; color:var(--cyan)}
 .crumbs .chip-type{font-family:'JetBrains Mono',monospace; font-size:11px; text-transform:uppercase; letter-spacing:.1em;
   padding:3px 8px; border-radius:7px; border:1px solid var(--border-2); background:var(--panel); color:var(--muted)}
 .topbar .spacer{flex:1}
@@ -109,6 +112,7 @@ h1 .grad{background:var(--accent); -webkit-background-clip:text; background-clip
 .gitem:focus-visible{outline:none; box-shadow:var(--glow)}
 .gitem .gic{width:32px; height:32px; border-radius:9px; display:grid; place-items:center; color:var(--indigo);
   background:rgba(99,102,241,.12); border:1px solid var(--border)}
+.gitem .gic.folder{color:var(--amber); background:rgba(245,181,61,.12)}
 .gitem .gname{font-family:'JetBrains Mono',monospace; font-size:13.5px; flex:1}
 .gitem .gcount{font-size:12px; color:var(--faint)}
 .gitem .go{color:var(--faint)}
@@ -207,7 +211,7 @@ tr:hover .rowact{opacity:1}
 .legend .sw{width:9px;height:9px;border-radius:99px}
 
 /* ============================== empty / misc ============================== */
-.empty{padding:36px 24px; text-align:center; border:1px dashed var(--border-2); border-radius:var(--r); background:var(--panel)}
+.empty{text-align:center; border-radius:var(--r); background:var(--panel)}
 .empty .ei{width:54px;height:54px;border-radius:16px;display:grid;place-items:center;margin:0 auto 16px;background:var(--accent-soft);border:1px solid var(--border-2);color:var(--cyan)}
 .empty h3{font-family:'Chakra Petch',sans-serif; margin:0 0 6px; font-weight:600}
 .empty p{color:var(--muted); margin:0}

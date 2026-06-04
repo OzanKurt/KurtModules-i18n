@@ -2,8 +2,10 @@
  * laravel-modules-i18n — translation manager UI ("i18n Studio").
  *
  * Framework-free. Reads prefix/csrf from the #i18n-bootstrap JSON blob, talks to
- * the package JSON API, and renders a type chooser, a PHP group picker, and a
- * locale-comparison grid.
+ * the package JSON API, and renders a type chooser (JSON / PHP / Vendor), a PHP
+ * group folder browser, a vendor package browser, and a locale-comparison grid.
+ * Navigation is driven by location.hash so the browser's back/forward buttons,
+ * refresh, and bookmarks all work.
  *
  * Security: every translation value reaches the DOM via textContent or an
  * input's `.value` (never innerHTML), so file contents can't inject markup.
@@ -47,8 +49,8 @@
     const elActions = document.getElementById('topactions');
 
     const state = {
-        catalog: null, view: 'home', type: null, group: null, target: null, refs: [], grid: null,
-        deleted: new Set(), renames: [], search: '', missingOnly: false,
+        catalog: null, view: 'home', type: null, group: null, namespace: null, groupPath: '',
+        target: null, refs: [], grid: null, deleted: new Set(), renames: [], search: '', missingOnly: false,
     };
 
     const ICONS = {
@@ -57,6 +59,8 @@
         save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7M8 20v-6h8v6"/>',
         braces: '<path d="M8 4c-1.6 0-2 1-2 3s.2 3-1.6 3c1.8 0 1.6 1 1.6 3s.4 3 2 3M16 4c1.6 0 2 1 2 3s-.2 3 1.6 3c-1.8 0-1.6 1-1.6 3s-.4 3-2 3"/>',
         layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/>',
+        folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+        package: '<path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
         chevron: '<path d="m9 6 6 6-6 6"/>',
         search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/>',
         arrowLeft: '<path d="M20 12H4M10 6l-6 6 6 6"/>',
@@ -107,6 +111,67 @@
 
     const labelFor = (c) => (LOCALE_LABELS[c] ? `${LOCALE_LABELS[c]} · ${c}` : c);
     const currentLocales = () => [state.target, ...state.refs].filter((v, i, a) => v && a.indexOf(v) === i);
+    const joinPath = (a, b) => (a ? `${a}/${b}` : b);
+    // The group id sent to the API: namespaced for vendor groups, plain otherwise.
+    const apiGroup = () => (state.namespace ? `${state.namespace}::${state.group}` : state.group);
+
+    /* ------------------------------ routing ------------------------------ */
+    // location.hash is the single source of truth for which view is shown.
+    //   (home)                     #
+    //   JSON grid                  #e/json
+    //   PHP folder browser         #g | #g/<folder>
+    //   PHP group grid             #e/php/<group>
+    //   Vendor package list        #v
+    //   Vendor package browser     #v/<package> | #v/<package>/<folder>
+    //   Vendor group grid          #e/v/<package>/<group>
+    function go(target) {
+        if (state.view === 'grid' && dirtyCount() > 0 && !window.confirm('Discard unsaved changes?')) return;
+        const next = target || '';
+        if (location.hash.replace(/^#/, '') === next) applyRoute();
+        else location.hash = next;
+    }
+
+    function applyRoute() {
+        if (!state.catalog) return;
+        const raw = location.hash.replace(/^#/, '');
+        const parts = raw.split('/').filter((s, i) => !(i === 0 && s === ''));
+        state.namespace = null;
+
+        if (raw === '') { state.view = 'home'; state.type = null; return render(); }
+
+        if (parts[0] === 'g') {
+            state.type = 'php';
+            state.view = 'groups';
+            state.groupPath = parts.slice(1).join('/');
+            return render();
+        }
+
+        if (parts[0] === 'v') {
+            state.type = 'php';
+            if (parts.length === 1) { state.view = 'vendors'; return render(); }
+            state.namespace = parts[1];
+            state.view = 'groups';
+            state.groupPath = parts.slice(2).join('/');
+            return render();
+        }
+
+        if (parts[0] === 'e') {
+            if (parts[1] === 'json') { state.type = 'json'; state.group = null; }
+            else if (parts[1] === 'php') { state.type = 'php'; state.group = parts.slice(2).join('/'); }
+            else if (parts[1] === 'v') { state.type = 'php'; state.namespace = parts[2]; state.group = parts.slice(3).join('/'); }
+            else { state.view = 'home'; return render(); }
+            state.view = 'grid';
+            const ls = state.catalog.locales;
+            state.target = ls[0] || null;
+            state.refs = ls.slice(1, 3);
+            state.grid = null;
+            render();
+            return loadGrid();
+        }
+
+        state.view = 'home';
+        render();
+    }
 
     /* ------------------------------ data ------------------------------ */
     async function boot() {
@@ -116,14 +181,15 @@
             return;
         }
         state.catalog = data;
-        render();
+        window.addEventListener('hashchange', applyRoute);
+        applyRoute();
     }
 
     async function loadGrid() {
         const locales = currentLocales();
         if (!locales.length) { state.grid = { keys: [], rows: {}, hashes: {} }; return render(); }
         const q = `?locales=${locales.join(',')}`;
-        const path = state.type === 'json' ? `/json${q}` : `/php/${state.group}${q}`;
+        const path = state.type === 'json' ? `/json${q}` : `/php/${apiGroup()}${q}`;
         const { ok, data } = await api('GET', path);
         if (!ok || !data) { toast('Failed to load', 'Could not read the translation files.', 'error'); return; }
         state.grid = data;
@@ -150,7 +216,7 @@
     async function doSave() {
         const ops = buildOps();
         if (!ops.length) { toast('Nothing to save', 'Make an edit first.', 'info'); return; }
-        const path = state.type === 'json' ? '/json' : `/php/${state.group}`;
+        const path = state.type === 'json' ? '/json' : `/php/${apiGroup()}`;
         const { ok, status, data } = await api('PATCH', path, { baseHashes: state.grid.hashes, ops });
         if (status === 409) { toast('Files changed on disk', 'Reloading the latest version.', 'error'); await loadGrid(); return; }
         if (!ok) { toast('Save failed', 'Your changes were not written.', 'error'); return; }
@@ -163,7 +229,7 @@
         if (!loc) return;
         if (!/^[A-Za-z0-9_-]+$/.test(loc)) { toast('Invalid code', 'Use letters, digits, _ or -', 'error'); return; }
         const body = { type: state.type, locale: loc };
-        if (state.type === 'php') body.group = state.group;
+        if (state.type === 'php') body.group = apiGroup();
         const { ok } = await api('POST', '/locales', body);
         if (!ok) { toast('Could not create locale', '', 'error'); return; }
         if (!state.catalog.locales.includes(loc)) state.catalog.locales.push(loc);
@@ -172,18 +238,9 @@
         loadGrid();
     }
 
-    /* ------------------------------ mutations ------------------------------ */
+    /* ------------------------------ grid mutations ------------------------------ */
     const dirtyGuard = () => !dirtyCount() || window.confirm('Discard unsaved changes?');
 
-    function chooseType(type) {
-        state.type = type;
-        const ls = state.catalog.locales;
-        state.target = ls[0] || null;
-        state.refs = ls.slice(1, 3);
-        if (type === 'php') { state.view = 'groups'; render(); } else { state.group = null; state.view = 'grid'; loadGrid(); }
-    }
-    function chooseGroup(g) { state.group = g; state.view = 'grid'; loadGrid(); }
-    function goHome() { if (!dirtyGuard()) return; Object.assign(state, { view: 'home', type: null, group: null, grid: null, search: '', missingOnly: false }); render(); }
     function setTarget(l) { if (!dirtyGuard()) return; state.target = l; state.refs = state.refs.filter((x) => x !== l); loadGrid(); }
     function toggleRef(l) { if (!dirtyGuard()) return; state.refs = state.refs.includes(l) ? state.refs.filter((x) => x !== l) : [...state.refs, l]; loadGrid(); }
 
@@ -262,20 +319,85 @@
             .filter((k) => !state.missingOnly || !(state.grid.rows[k] && state.grid.rows[k][state.target]));
     }
 
+    // Split a list of groups into the folders and files directly under `prefix`.
+    function phpTree(groups, prefix) {
+        const base = prefix ? `${prefix}/` : '';
+        const folders = {};
+        const files = [];
+        for (const g of groups) {
+            if (prefix && !(g === prefix || g.startsWith(base))) continue;
+            const rest = prefix ? (g === prefix ? '' : g.slice(base.length)) : g;
+            if (rest === '') continue;
+            const i = rest.indexOf('/');
+            if (i === -1) files.push(g);
+            else { const seg = rest.slice(0, i); folders[seg] = (folders[seg] || 0) + 1; }
+        }
+        return {
+            folders: Object.keys(folders).sort().map((name) => ({ name, count: folders[name] })),
+            files: files.sort(),
+        };
+    }
+
     /* ------------------------------ render ------------------------------ */
     function render() {
         renderCrumbs(); renderActions();
-        root.replaceChildren(state.view === 'home' ? renderHome() : state.view === 'groups' ? renderGroups() : renderGrid());
+        const view = state.view === 'home' ? renderHome()
+            : state.view === 'vendors' ? renderVendors()
+                : state.view === 'groups' ? renderGroups()
+                    : renderGrid();
+        root.replaceChildren(view);
         if (state.view === 'grid') { updateProgress(); updateSave(); }
     }
 
+    function sep() { return h('span', { class: 'sep' }, '/'); }
+    function crumbLink(label, onclick) { return h('button', { class: 'crumblink', onclick }, label); }
+    function crumbHere(label) { return h('span', { class: 'here' }, label); }
+
     function renderCrumbs() {
-        const items = [];
-        items.push(h('button', { class: 'iconbtn', title: 'Back to start', 'aria-label': 'Back to start', onclick: goHome, style: state.view === 'home' ? 'visibility:hidden' : '' }, svg('back', 18)));
-        items.push(h('span', { class: state.view === 'home' ? 'here' : '' }, 'Translations'));
-        if (state.type) items.push(h('span', { class: 'sep' }, '/'), h('span', { class: 'chip-type' }, state.type === 'json' ? 'JSON' : 'PHP'), h('span', { class: state.group ? '' : 'here' }, state.type === 'json' ? 'JSON files' : 'PHP files'));
-        if (state.group) items.push(h('span', { class: 'sep' }, '/'), h('span', { class: 'here' }, state.group));
+        const items = [
+            h('button', { class: 'iconbtn', title: 'Back', 'aria-label': 'Back', onclick: () => history.back(), style: state.view === 'home' ? 'visibility:hidden' : '' }, svg('back', 18)),
+            state.view === 'home' ? crumbHere('Translations') : crumbLink('Translations', () => go('')),
+        ];
+
+        if (state.view === 'vendors' || state.namespace) {
+            items.push(sep(), h('span', { class: 'chip-type' }, 'VENDOR'));
+            items.push(sep(), state.view === 'vendors' ? crumbHere('Vendor packages') : crumbLink('Vendor packages', () => go('v')));
+            if (state.namespace) {
+                const pkgHere = state.view === 'groups' && !state.groupPath;
+                items.push(sep(), pkgHere ? crumbHere(state.namespace) : crumbLink(state.namespace, () => go('v/' + state.namespace)));
+                pushPathCrumbs(items, (p) => 'v/' + state.namespace + '/' + p);
+            }
+        } else if (state.type === 'json') {
+            items.push(sep(), h('span', { class: 'chip-type' }, 'JSON'), sep(), crumbHere('JSON files'));
+        } else if (state.type === 'php') {
+            items.push(sep(), h('span', { class: 'chip-type' }, 'PHP'));
+            const rootHere = state.view === 'groups' && !state.groupPath;
+            items.push(sep(), rootHere ? crumbHere('PHP files') : crumbLink('PHP files', () => go('g')));
+            pushPathCrumbs(items, (p) => 'g/' + p);
+        }
         elCrumbs.replaceChildren(...items);
+    }
+
+    // Append folder/group path crumbs for the current groups or grid view.
+    function pushPathCrumbs(items, hashFor) {
+        if (state.view === 'groups' && state.groupPath) {
+            const segs = state.groupPath.split('/');
+            let path = '';
+            segs.forEach((s, i) => {
+                path = joinPath(path, s);
+                const p = path;
+                items.push(sep(), i === segs.length - 1 ? crumbHere(s) : crumbLink(s, () => go(hashFor(p))));
+            });
+        } else if (state.view === 'grid' && state.group) {
+            const parts = state.group.split('/');
+            let path = '';
+            parts.forEach((s, i) => {
+                if (i === parts.length - 1) { items.push(sep(), crumbHere(s)); return; }
+                path = joinPath(path, s);
+                const p = path;
+                items.push(sep(), crumbLink(s, () => go(hashFor(p))));
+            });
+        }
     }
 
     function renderActions() {
@@ -285,31 +407,69 @@
     }
 
     function renderHome() {
-        const card = (type, icon, title, desc, meta) => h('button', { class: 'card', onclick: () => chooseType(type) },
+        const card = (target, icon, title, desc, meta) => h('button', { class: 'card', onclick: () => go(target) },
             h('span', { class: 'go' }, svg('chevron', 20)),
             h('span', { class: 'ic' }, svg(icon, 24)),
             h('h2', {}, title), h('p', {}, desc),
             h('div', { class: 'meta' }, ...meta));
+        const vendorCount = (state.catalog.vendor || []).length;
         return h('div', { class: 'fade' },
             h('div', { class: 'intro' },
                 h('div', { class: 'kicker' }, h('span', { class: 'dot' }), 'Localization workspace'),
                 h('h1', {}, 'Manage every ', h('span', { class: 'grad' }, 'translation'), ' in one deck.'),
-                h('p', { class: 'sub' }, 'Edit your Laravel JSON and PHP language files side by side — pick a target locale, keep references in view, and ship complete translations faster.')),
+                h('p', { class: 'sub' }, 'Edit your Laravel JSON, PHP, and vendor language files side by side — pick a target locale, keep references in view, and ship complete translations faster.')),
             h('div', { class: 'cards stagger' },
-                card('json', 'braces', 'JSON files', 'Flat key → value strings in lang/{locale}.json.',
+                card('e/json', 'braces', 'JSON files', 'Flat key → value strings in lang/{locale}.json.',
                     [h('span', {}, h('b', {}, String(state.catalog.json.locales.length)), ' locales')]),
-                card('php', 'layers', 'PHP array files', 'Grouped, deeply-nestable keys in lang/{locale}/*.php.',
-                    [h('span', {}, h('b', {}, String(state.catalog.php.groups.length)), ' groups')])));
+                card('g', 'layers', 'PHP array files', 'Grouped, deeply-nestable keys in lang/{locale}/*.php.',
+                    [h('span', {}, h('b', {}, String(state.catalog.php.groups.length)), ' groups')]),
+                card('v', 'package', 'Vendor packages', 'Namespaced package translations in lang/vendor/{package}.',
+                    [h('span', {}, h('b', {}, String(vendorCount)), vendorCount === 1 ? ' package' : ' packages')])));
+    }
+
+    function renderVendors() {
+        const pkgs = state.catalog.vendor || [];
+        const list = pkgs.length
+            ? h('div', { class: 'panel glist stagger' },
+                ...pkgs.map((p) => h('button', { class: 'gitem', onclick: () => go('v/' + p.name) },
+                    h('span', { class: 'gic folder' }, svg('package', 16)),
+                    h('span', { class: 'gname' }, p.name),
+                    h('span', { class: 'gcount' }, `${p.groups.length} ${p.groups.length === 1 ? 'file' : 'files'} · ${p.locales.length} ${p.locales.length === 1 ? 'locale' : 'locales'}`),
+                    h('span', { class: 'go' }, svg('chevron', 18)))))
+            : emptyState('package', 'No vendor translations', 'Nothing published under lang/vendor yet.');
+        return h('div', { class: 'fade' },
+            h('div', { class: 'intro' }, h('div', { class: 'kicker' }, h('span', { class: 'dot' }), 'Vendor packages'), h('h1', { style: 'font-size:26px' }, 'Choose a package')),
+            list);
     }
 
     function renderGroups() {
-        const groups = state.catalog.php.groups;
-        if (!groups.length) return emptyState('empty', 'No PHP groups', 'No PHP array files found under your lang path.');
+        const source = state.namespace
+            ? ((state.catalog.vendor || []).find((p) => p.name === state.namespace) || { groups: [] }).groups
+            : state.catalog.php.groups;
+        const { folders, files } = phpTree(source, state.groupPath);
+        const heading = state.groupPath || state.namespace || 'Choose a file';
+        const folderBase = state.namespace ? 'v/' + state.namespace : 'g';
+        const kicker = state.namespace ? `Vendor · ${state.namespace}` : 'PHP array files';
+
+        const list = (folders.length || files.length)
+            ? h('div', { class: 'panel glist stagger' },
+                ...folders.map((f) => h('button', { class: 'gitem', onclick: () => go(folderBase + '/' + joinPath(state.groupPath, f.name)) },
+                    h('span', { class: 'gic folder' }, svg('folder', 16)),
+                    h('span', { class: 'gname' }, `${f.name}/`),
+                    h('span', { class: 'gcount' }, `${f.count} ${f.count === 1 ? 'file' : 'files'}`),
+                    h('span', { class: 'go' }, svg('chevron', 18)))),
+                ...files.map((g) => {
+                    const leaf = state.groupPath ? g.slice(state.groupPath.length + 1) : g;
+                    return h('button', { class: 'gitem', onclick: () => go(state.namespace ? 'e/v/' + state.namespace + '/' + g : 'e/php/' + g) },
+                        h('span', { class: 'gic' }, svg('layers', 16)),
+                        h('span', { class: 'gname' }, `${leaf}.php`),
+                        h('span', { class: 'go' }, svg('chevron', 18)));
+                }))
+            : emptyState('empty', state.namespace ? 'Empty package' : 'Empty folder', 'No PHP array files here.');
+
         return h('div', { class: 'fade' },
-            h('div', { class: 'intro' }, h('div', { class: 'kicker' }, h('span', { class: 'dot' }), 'PHP array files'), h('h1', { style: 'font-size:26px' }, 'Choose a file')),
-            h('div', { class: 'panel glist stagger' },
-                ...groups.map((g) => h('button', { class: 'gitem', onclick: () => chooseGroup(g) },
-                    h('span', { class: 'gic' }, svg('layers', 16)), h('span', { class: 'gname' }, `${g}.php`), h('span', { class: 'go' }, svg('chevron', 18))))));
+            h('div', { class: 'intro' }, h('div', { class: 'kicker' }, h('span', { class: 'dot' }), kicker), h('h1', { style: 'font-size:26px' }, heading)),
+            list);
     }
 
     function keyMarkup(key) {
@@ -401,6 +561,10 @@
         if (e.key === 'Escape') { const s = document.getElementById('searchBox'); if (document.activeElement === s) { s.value = ''; state.search = ''; refreshBody(); } }
     });
 
-    document.querySelector('.brand .mark')?.append(svg('globe', 19));
+    const mark = document.querySelector('.brand .mark');
+    if (mark) mark.append(svg('globe', 19));
+    const brand = document.querySelector('.brand');
+    if (brand) { brand.style.cursor = 'pointer'; brand.addEventListener('click', () => go('')); }
+
     boot();
 })();

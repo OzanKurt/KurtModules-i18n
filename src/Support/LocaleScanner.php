@@ -36,7 +36,10 @@ final class LocaleScanner
             foreach (glob($root.'/*', GLOB_ONLYDIR) ?: [] as $directory) {
                 $locale = basename($directory);
 
-                if (! LangPaths::isValidLocale($locale)) {
+                // "vendor" is reserved by Laravel for namespaced package translations
+                // (lang/vendor/{package}/{locale}/...), so it is not a locale of its own.
+                // Editing those needs proper namespace handling and is out of scope here.
+                if ($locale === 'vendor' || ! LangPaths::isValidLocale($locale)) {
                     continue;
                 }
 
@@ -60,7 +63,67 @@ final class LocaleScanner
         sort($jsonList);
         sort($groupList);
 
-        return new TranslationCatalog($locales, $jsonList, $groupList);
+        return new TranslationCatalog($locales, $jsonList, $groupList, $this->scanVendor($root));
+    }
+
+    /**
+     * Discover namespaced package translations under lang/vendor/{package}/{locale}/{group}.php.
+     *
+     * @return list<array{name: string, locales: list<string>, groups: list<string>}>
+     */
+    private function scanVendor(string $root): array
+    {
+        $vendorRoot = $root.'/vendor';
+
+        if (! is_dir($vendorRoot)) {
+            return [];
+        }
+
+        $packages = [];
+
+        foreach (glob($vendorRoot.'/*', GLOB_ONLYDIR) ?: [] as $packageDir) {
+            $package = basename($packageDir);
+
+            if (! LangPaths::isValidPackage($package)) {
+                continue;
+            }
+
+            $locales = [];
+            $groups = [];
+
+            foreach (glob($packageDir.'/*', GLOB_ONLYDIR) ?: [] as $localeDir) {
+                $locale = basename($localeDir);
+
+                if (! LangPaths::isValidLocale($locale)) {
+                    continue;
+                }
+
+                $found = $this->phpGroupsIn($localeDir);
+
+                if ($found !== []) {
+                    $locales[$locale] = true;
+
+                    foreach ($found as $group) {
+                        $groups[$group] = true;
+                    }
+                }
+            }
+
+            if ($groups === []) {
+                continue;
+            }
+
+            $localeList = array_keys($locales);
+            $groupList = array_keys($groups);
+            sort($localeList);
+            sort($groupList);
+
+            $packages[] = ['name' => $package, 'locales' => $localeList, 'groups' => $groupList];
+        }
+
+        usort($packages, static fn (array $a, array $b): int => strcmp($a['name'], $b['name']));
+
+        return $packages;
     }
 
     /**

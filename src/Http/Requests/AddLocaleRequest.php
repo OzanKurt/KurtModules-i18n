@@ -22,7 +22,7 @@ final class AddLocaleRequest extends FormRequest
         return [
             'type' => ['required', Rule::in(['json', 'php'])],
             'locale' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]+$/'],
-            'group' => ['nullable', 'string', 'required_if:type,php', 'regex:#^[A-Za-z0-9_/-]+$#'],
+            'group' => ['nullable', 'string', 'required_if:type,php', 'regex:#^[A-Za-z0-9_/:-]+$#'],
         ];
     }
 }

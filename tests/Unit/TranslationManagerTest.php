@@ -95,3 +95,17 @@ it('rejects a set op for a locale that was not loaded', function (): void {
 
     $this->manager->apply(FileType::Json, null, $base, [EditOperation::set('tr', 'a', '2')]);
 })->throws(InvalidArgumentException::class);
+
+it('reads and writes a vendor namespaced group under lang/vendor', function (): void {
+    mkdir($this->root.'/vendor/firewall/en', 0777, true);
+    file_put_contents($this->root.'/vendor/firewall/en/notifications.php', "<?php return ['greeting' => 'Hello'];");
+
+    $grid = $this->manager->grid(FileType::Php, 'firewall::notifications', ['en']);
+    expect($grid['rows']['greeting']['en'])->toBe('Hello');
+
+    $this->manager->apply(FileType::Php, 'firewall::notifications', $grid['hashes'], [EditOperation::set('en', 'greeting', 'Hi')]);
+    expect(require $this->root.'/vendor/firewall/en/notifications.php')->toBe(['greeting' => 'Hi']);
+
+    $this->manager->addLocale(FileType::Php, 'de', 'firewall::notifications');
+    expect(is_file($this->root.'/vendor/firewall/de/notifications.php'))->toBeTrue();
+});

@@ -4,6 +4,22 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-04
+
+### Added
+
+- **Vendor packages mode**: a third workspace for namespaced package translations in `lang/vendor/{package}/{locale}/{group}.php`. Pick a package, then a group, and edit it as `package::group` with the locale as the proper target axis.
+- **Folder browser** for PHP groups — nested groups (and vendor packages) are navigated as collapsible folders instead of one flat list.
+- **Browser history**: views are hash-routed (`#g`, `#g/<folder>`, `#e/php/<group>`, `#v`, `#e/v/<package>/<group>`), so back/forward, refresh, and bookmarks work; clickable breadcrumb path.
+
+### Fixed
+
+- `lang/vendor` was incorrectly scanned as a locale, surfacing bogus groups like `firewall/en/notifications` with the locale baked into the path. It is now recognised as namespaced package translations (see Vendor packages mode).
+
+### Changed
+
+- The catalog API response gains a `vendor` section listing each package's groups and locales.
+
 ## [2.1.0] - 2026-06-03
 
 ### Changed

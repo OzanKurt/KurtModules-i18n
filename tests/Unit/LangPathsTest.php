@@ -52,3 +52,21 @@ it('rejects a path outside the root', function (): void {
 it('rejects traversal that escapes the root', function (): void {
     (new LangPaths('/var/lang'))->assertSafe('/var/lang/../other/x');
 })->throws(TranslationPathException::class);
+
+it('builds a vendor namespaced php path', function (): void {
+    expect($this->paths->phpPath('firewall::notifications', 'en'))->toBe('/var/lang/vendor/firewall/en/notifications.php')
+        ->and($this->paths->phpPath('firewall::admin/alerts', 'de'))->toBe('/var/lang/vendor/firewall/de/admin/alerts.php');
+});
+
+it('validates packages and namespaced group refs', function (): void {
+    expect(LangPaths::isValidPackage('firewall'))->toBeTrue()
+        ->and(LangPaths::isValidPackage('..'))->toBeFalse()
+        ->and(LangPaths::isValidGroupRef('auth'))->toBeTrue()
+        ->and(LangPaths::isValidGroupRef('firewall::notifications'))->toBeTrue()
+        ->and(LangPaths::isValidGroupRef('firewall::../etc'))->toBeFalse()
+        ->and(LangPaths::isValidGroupRef('..::x'))->toBeFalse();
+});
+
+it('rejects a traversing package in a vendor path', function (): void {
+    (new LangPaths('/var/lang'))->phpPath('..::x', 'en');
+})->throws(TranslationPathException::class);

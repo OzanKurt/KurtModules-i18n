@@ -43,3 +43,20 @@ it('rejects an invalid group name', function (): void {
 it('rejects an invalid locale query', function (): void {
     $this->getJson('/i18n/api/php/users?locales=en,b@d')->assertStatus(422);
 });
+
+it('reads and writes a vendor namespaced group over the api', function (): void {
+    mkdir($this->root.'/vendor/firewall/en', 0777, true);
+    file_put_contents($this->root.'/vendor/firewall/en/notifications.php', "<?php return ['greeting' => 'Hello'];");
+
+    $base = $this->getJson('/i18n/api/php/firewall::notifications?locales=en')
+        ->assertOk()
+        ->assertJsonPath('keys.0', 'greeting')
+        ->json('hashes');
+
+    $this->patchJson('/i18n/api/php/firewall::notifications', [
+        'baseHashes' => $base,
+        'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'greeting', 'value' => 'Hi']],
+    ])->assertOk()->assertJsonPath('changed.0', 'en');
+
+    expect(require $this->root.'/vendor/firewall/en/notifications.php')->toBe(['greeting' => 'Hi']);
+});
