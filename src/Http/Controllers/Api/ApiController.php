@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use InvalidArgumentException;
 use Kurt\Modules\I18n\Exceptions\TranslationConflictException;
 use Kurt\Modules\I18n\Exceptions\TranslationPathException;
+use Kurt\Modules\I18n\Exceptions\TranslatorNotConfiguredException;
 use Kurt\Modules\I18n\Support\LangPaths;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
@@ -42,6 +43,32 @@ abstract class ApiController
     }
 
     /**
+     * Parse `?locales=a,b,c` when present, else return null (the caller then
+     * applies its own default). Every provided locale is validated.
+     *
+     * @return list<string>|null
+     */
+    protected function optionalLocalesFromRequest(Request $request): ?array
+    {
+        $raw = trim((string) $request->query('locales', ''));
+
+        if ($raw === '') {
+            return null;
+        }
+
+        $locales = array_values(array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $locale): bool => $locale !== '',
+        ));
+
+        foreach ($locales as $locale) {
+            abort_unless(LangPaths::isValidLocale($locale), 422, "Invalid locale [{$locale}].");
+        }
+
+        return array_values(array_unique($locales));
+    }
+
+    /**
      * Run an apply() call and translate domain exceptions into HTTP responses.
      *
      * @param  Closure(): array{hashes: array<string, string|null>, changed: list<string>}  $apply
@@ -52,6 +79,8 @@ abstract class ApiController
             return response()->json($apply());
         } catch (TranslationConflictException $e) {
             return response()->json(['message' => 'conflict', 'locales' => $e->locales], 409);
+        } catch (TranslatorNotConfiguredException $e) {
+            return response()->json(['message' => $e->getMessage()], 501);
         } catch (TranslationPathException|InvalidArgumentException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
