@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Events\Dispatcher;
 use Kurt\Modules\I18n\Enums\FileType;
+use Kurt\Modules\I18n\Events\TranslationsChanged;
 use Kurt\Modules\I18n\Exceptions\TranslationConflictException;
 use Kurt\Modules\I18n\Support\ArrayExporter;
 use Kurt\Modules\I18n\Support\EditOperation;
@@ -108,6 +110,142 @@ it('rejects a set op for a locale that was not loaded', function (): void {
 
     $this->manager->apply(FileType::Json, null, $base, [EditOperation::set('tr', 'a', '2')]);
 })->throws(InvalidArgumentException::class);
+
+it('raises a conflict instead of overwriting when a second writer changes a file mid-apply', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
+    $base = $this->manager->grid(FileType::Json, null, ['en'])['hashes'];
+
+    // A manager whose in-flight apply is interrupted by a concurrent writer that
+    // rewrites the file after we read it but before we write our own edits.
+    $manager = new class(new LangPaths($this->root), new ArrayExporter) extends TranslationManager
+    {
+        public ?Closure $onBeforeWrites = null;
+
+        protected function beforeApplyWrites(): void
+        {
+            if ($this->onBeforeWrites !== null) {
+                ($this->onBeforeWrites)();
+            }
+        }
+    };
+
+    $manager->onBeforeWrites = function () use ($manager): void {
+        // Prevent infinite recursion; the racing writer only strikes once.
+        $manager->onBeforeWrites = null;
+        file_put_contents($this->root.'/en.json', json_encode(['a' => 'from-other-writer']));
+    };
+
+    expect(fn () => $manager->apply(FileType::Json, null, $base, [EditOperation::set('en', 'a', '2')]))
+        ->toThrow(TranslationConflictException::class);
+
+    // The other writer's value must survive: no silent last-writer-wins overwrite.
+    expect(json_decode((string) file_get_contents($this->root.'/en.json'), true))
+        ->toBe(['a' => 'from-other-writer']);
+});
+
+it('leaves every locale unchanged when one locale in the batch fails to commit', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['keep' => 'en-value']));
+    // A directory sitting where tr.json should be makes the tr write fail at the
+    // swap step, after en has already been committed — forcing a rollback.
+    mkdir($this->root.'/tr.json', 0777, true);
+
+    $base = ['en' => hash_file('sha1', $this->root.'/en.json'), 'tr' => null];
+
+    expect(fn () => $this->manager->apply(FileType::Json, null, $base, [
+        EditOperation::set('en', 'new', 'en-added'),
+        EditOperation::set('tr', 'new', 'tr-added'),
+    ]))->toThrow(RuntimeException::class);
+
+    // en must be rolled back to its pre-batch contents (no partial apply).
+    expect(json_decode((string) file_get_contents($this->root.'/en.json'), true))
+        ->toBe(['keep' => 'en-value'])
+        ->and(is_dir($this->root.'/tr.json'))->toBeTrue();
+});
+
+it('dispatches TranslationsChanged with the changed locales and ops on a real change', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
+    file_put_contents($this->root.'/tr.json', json_encode(['a' => 'x']));
+
+    $dispatcher = new Dispatcher;
+    $captured = [];
+    $dispatcher->listen(TranslationsChanged::class, function (TranslationsChanged $event) use (&$captured): void {
+        $captured[] = $event;
+    });
+
+    $manager = new TranslationManager(new LangPaths($this->root), new ArrayExporter, null, $dispatcher);
+    $base = $manager->grid(FileType::Json, null, ['en', 'tr'])['hashes'];
+    $ops = [EditOperation::set('en', 'a', '2')];
+
+    $manager->apply(FileType::Json, null, $base, $ops);
+
+    expect($captured)->toHaveCount(1)
+        ->and($captured[0]->type)->toBe(FileType::Json)
+        ->and($captured[0]->group)->toBeNull()
+        ->and($captured[0]->changedLocales)->toBe(['en'])
+        ->and($captured[0]->ops)->toBe($ops)
+        ->and($captured[0]->actor)->toBeNull();
+});
+
+it('does not dispatch TranslationsChanged on a no-op batch', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
+
+    $dispatcher = new Dispatcher;
+    $fired = false;
+    $dispatcher->listen(TranslationsChanged::class, function () use (&$fired): void {
+        $fired = true;
+    });
+
+    $manager = new TranslationManager(new LangPaths($this->root), new ArrayExporter, null, $dispatcher);
+    $base = $manager->grid(FileType::Json, null, ['en'])['hashes'];
+
+    // Setting the key to its current value changes nothing on disk.
+    $result = $manager->apply(FileType::Json, null, $base, [EditOperation::set('en', 'a', '1')]);
+
+    expect($result['changed'])->toBe([])
+        ->and($fired)->toBeFalse();
+});
+
+it('passes the resolved actor to the dispatched event', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
+
+    $dispatcher = new Dispatcher;
+    $captured = [];
+    $dispatcher->listen(TranslationsChanged::class, function (TranslationsChanged $event) use (&$captured): void {
+        $captured[] = $event;
+    });
+
+    $manager = new TranslationManager(
+        new LangPaths($this->root),
+        new ArrayExporter,
+        null,
+        $dispatcher,
+        static fn (): string => 'editor@example.com',
+    );
+    $base = $manager->grid(FileType::Json, null, ['en'])['hashes'];
+
+    $manager->apply(FileType::Json, null, $base, [EditOperation::set('en', 'a', '2')]);
+
+    expect($captured)->toHaveCount(1)
+        ->and($captured[0]->actor)->toBe('editor@example.com');
+});
+
+it('memoizes the catalog and refreshes it after a write', function (): void {
+    file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
+
+    $first = $this->manager->catalog();
+
+    // A file added out of band is not reflected while the memo stands.
+    file_put_contents($this->root.'/tr.json', json_encode(['a' => 'x']));
+
+    expect($this->manager->catalog())->toBe($first)
+        ->and($first->jsonLocales)->toBe(['en']);
+
+    // A write through the manager invalidates the memo, so the next scan is fresh.
+    $this->manager->addLocale(FileType::Json, 'de');
+
+    expect($this->manager->catalog())->not->toBe($first)
+        ->and($this->manager->catalog()->jsonLocales)->toBe(['de', 'en', 'tr']);
+});
 
 it('reads and writes a vendor namespaced group under lang/vendor', function (): void {
     mkdir($this->root.'/vendor/firewall/en', 0777, true);

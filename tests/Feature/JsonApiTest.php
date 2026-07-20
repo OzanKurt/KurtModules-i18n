@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Kurt\Modules\I18n\Events\TranslationsChanged;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
 beforeEach(function (): void {
@@ -61,6 +63,28 @@ it('returns 409 when a base hash is stale', function (): void {
         'baseHashes' => ['en' => 'stale'],
         'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'a', 'value' => '2']],
     ])->assertStatus(409)->assertJsonPath('locales.0', 'en');
+});
+
+it('dispatches TranslationsChanged through the container-wired manager', function (): void {
+    Event::fake([TranslationsChanged::class]);
+
+    // Drop the test double so the container builds the real, event-wired manager.
+    config()->set('i18n.paths.root', $this->root);
+    config()->set('i18n.backups.enabled', false);
+    $this->app->forgetInstance(TranslationManager::class);
+
+    file_put_contents($this->root.'/en.json', json_encode(['greeting' => 'Hi']));
+    $base = $this->getJson('/i18n/api/json?locales=en')->json('hashes');
+
+    $this->patchJson('/i18n/api/json', [
+        'baseHashes' => $base,
+        'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'bye', 'value' => 'Bye']],
+    ])->assertOk();
+
+    Event::assertDispatched(
+        TranslationsChanged::class,
+        fn (TranslationsChanged $event): bool => $event->changedLocales === ['en'] && $event->group === null,
+    );
 });
 
 it('validates the ops payload', function (): void {

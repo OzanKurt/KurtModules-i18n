@@ -4,6 +4,20 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
+### Added
+
+- `TranslationsChanged` domain event, dispatched after a batch actually changes a file (with the file type, group, changed locales, applied ops, and actor when resolvable) for audit/webhook/cache extensions.
+- README section documenting the JSON API contract (endpoints, `baseHashes` + `ops` body, `409` conflict shape) and the concurrency semantics.
+
+### Fixed
+
+- **Concurrent-save lost update**: the optimistic-hash check now runs inside an exclusive per-group file lock, held across the whole read-modify-write. Two saves from the same base hashes can no longer both succeed and silently clobber one another; the second gets a `409`.
+- **Multi-locale batches are now atomic**: all locales are staged and verified before any file is swapped in, and a mid-batch failure rolls the already-written files back, so a batch never lands half-applied.
+
+### Changed
+
+- The catalog scan is memoized per manager instance (invalidated on write), so a single request no longer rescans the translation tree multiple times.
+
 ## [2.2.0] - 2026-06-04
 
 ### Added

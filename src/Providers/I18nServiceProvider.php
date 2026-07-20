@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Kurt\Modules\I18n\Providers;
 
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Kurt\Modules\Core\Providers\PackageServiceProvider;
 use Kurt\Modules\I18n\Http\Middleware\Authorize;
@@ -42,7 +44,13 @@ final class I18nServiceProvider extends PackageServiceProvider
                 )
                 : null;
 
-            return new TranslationManager(new LangPaths($root), new ArrayExporter, $backup);
+            return new TranslationManager(
+                new LangPaths($root),
+                new ArrayExporter,
+                $backup,
+                $app->make(Dispatcher::class),
+                static fn (): mixed => Auth::user(),
+            );
         });
     }
 
