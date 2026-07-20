@@ -158,8 +158,15 @@ final class TranslationManager
                     }
 
                     $value = $this->getValue($type, $data[$locale], (string) $op->from);
+
+                    // Refuse to rename a non-leaf key: collapsing its subtree to
+                    // an empty string would silently drop all child translations.
+                    if (! is_string($value)) {
+                        continue;
+                    }
+
                     $this->forgetValue($type, $data[$locale], (string) $op->from);
-                    $this->setValue($type, $data[$locale], (string) $op->to, is_string($value) ? $value : '');
+                    $this->setValue($type, $data[$locale], (string) $op->to, $value);
                 }
                 break;
         }

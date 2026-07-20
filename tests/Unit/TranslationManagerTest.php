@@ -75,6 +75,19 @@ it('renames a key preserving each locale value', function (): void {
         ->toBe(['en' => 'value-en', 'tr' => 'value-tr']);
 });
 
+it('does not collapse a subtree when renaming a non-leaf key', function (): void {
+    mkdir($this->root.'/en', 0777, true);
+    file_put_contents($this->root.'/en/users.php', "<?php return ['title' => ['icon' => 'Manage', 'label' => 'Users']];");
+    $base = $this->manager->grid(FileType::Php, 'users', ['en'])['hashes'];
+
+    // 'title' is a non-leaf (its value is an array); renaming it must be a
+    // no-op rather than wiping its children.
+    $this->manager->apply(FileType::Php, 'users', $base, [EditOperation::rename('title', 'heading')]);
+
+    expect($this->manager->grid(FileType::Php, 'users', ['en'])['keys'])
+        ->toBe(['title.icon', 'title.label']);
+});
+
 it('throws a conflict when a base hash is stale', function (): void {
     file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
 
