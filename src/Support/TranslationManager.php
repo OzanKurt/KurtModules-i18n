@@ -48,6 +48,39 @@ class TranslationManager
     }
 
     /**
+     * Every translation group known on disk, as (type, group) pairs: the JSON
+     * pseudo-group (group `null`) followed by every project and vendor PHP
+     * group. Vendor groups are namespaced as `{package}::{group}`.
+     *
+     * Used by the cross-group tools (missing-key report, export) so they iterate
+     * exactly the same set of files the UI can open.
+     *
+     * @return list<array{type: FileType, group: string|null}>
+     */
+    public function groups(): array
+    {
+        $catalog = $this->catalog();
+
+        $groups = [];
+
+        if ($catalog->jsonLocales !== []) {
+            $groups[] = ['type' => FileType::Json, 'group' => null];
+        }
+
+        foreach ($catalog->phpGroups as $group) {
+            $groups[] = ['type' => FileType::Php, 'group' => $group];
+        }
+
+        foreach ($catalog->vendor as $package) {
+            foreach ($package['groups'] as $group) {
+                $groups[] = ['type' => FileType::Php, 'group' => $package['name'].'::'.$group];
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
      * @param  list<string>  $locales
      * @return array{keys: list<string>, rows: array<string, array<string, string|null>>, hashes: array<string, string|null>}
      */

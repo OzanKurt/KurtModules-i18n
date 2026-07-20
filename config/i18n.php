@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Kurt\Modules\I18n\Support\NullTranslator;
 
 return [
 
@@ -78,5 +79,19 @@ return [
     */
 
     'locales' => null,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Translator
+    |--------------------------------------------------------------------------
+    |
+    | The class used by the "translate missing keys" action. It must implement
+    | Kurt\Modules\I18n\Contracts\Translator. The shipped default refuses to run
+    | (it throws) so nothing is silently written untranslated — point this at
+    | your own DeepL/Google/LLM-backed implementation to enable the feature.
+    |
+    */
+
+    'translator' => NullTranslator::class,
 
 ];

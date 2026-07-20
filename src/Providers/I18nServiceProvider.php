@@ -9,10 +9,12 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Kurt\Modules\Core\Providers\PackageServiceProvider;
+use Kurt\Modules\I18n\Contracts\Translator;
 use Kurt\Modules\I18n\Http\Middleware\Authorize;
 use Kurt\Modules\I18n\Support\ArrayExporter;
 use Kurt\Modules\I18n\Support\FileBackup;
 use Kurt\Modules\I18n\Support\LangPaths;
+use Kurt\Modules\I18n\Support\NullTranslator;
 use Kurt\Modules\I18n\Support\TranslationManager;
 use Spatie\LaravelPackageTools\Package;
 
@@ -51,6 +53,20 @@ final class I18nServiceProvider extends PackageServiceProvider
                 $app->make(Dispatcher::class),
                 static fn (): mixed => Auth::user(),
             );
+        });
+
+        // The machine-translation seam. Bound to the configured class (which
+        // must implement Translator); defaults to the null translator that
+        // throws until the consumer wires a real provider.
+        $this->app->bind(Translator::class, function (Application $app): Translator {
+            /** @var mixed $class */
+            $class = config('i18n.translator');
+            $class = is_string($class) && $class !== '' ? $class : NullTranslator::class;
+
+            /** @var Translator $translator */
+            $translator = $app->make($class);
+
+            return $translator;
         });
     }
 

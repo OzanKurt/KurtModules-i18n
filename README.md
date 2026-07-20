@@ -82,6 +82,10 @@ All request and response bodies are JSON.
 | `GET /i18n/api/php/{group}`| Read a PHP group grid (`{group}` may be nested, e.g. `admin/users`, or namespaced, e.g. `firewall::notifications`). |
 | `PATCH /i18n/api/php/{group}` | Apply a batch of edits to a PHP group.       |
 | `POST /i18n/api/locales`   | Create a new empty locale file.                |
+| `GET /i18n/api/report/missing` | Cross-group missing-key report for a reference locale. |
+| `GET /i18n/api/export`     | Export a locale (one group or all) to CSV/JSON.|
+| `POST /i18n/api/import`    | Import CSV/JSON `key,value` rows into a group.  |
+| `POST /i18n/api/translate-missing` | Fill a locale's missing keys via the configured translator. |
 
 ### Reading a grid
 
@@ -158,6 +162,124 @@ After a batch actually changes at least one file, the manager dispatches
 JSON), the `changedLocales`, the applied `ops`, and the `actor` (the authenticated user, when
 resolvable). Listen for it to keep an audit log, fire a webhook, bust a translation cache, or trigger
 a redeploy. It does not fire for a no-op batch.
+
+## Cross-group missing-key report
+
+`GET /i18n/api/report/missing?reference=en` answers "what still needs translating?" across **every**
+group at once — the JSON pseudo-group plus every project and vendor PHP group — instead of one open
+group at a time. Given a reference locale it lists, per target locale, the keys the reference defines
+that are absent from that locale's copy of each group.
+
+- `reference` (required) — the locale whose keys are the source of truth.
+- `locales` (optional, `a,b,c`) — restrict the targets; defaults to every known locale but the reference.
+
+```json
+{
+  "reference": "en",
+  "locales": ["de", "tr"],
+  "groups": [
+    { "type": "json", "group": null,    "missing": { "tr": ["bye"] } },
+    { "type": "php",  "group": "users", "missing": { "de": ["title.icon"], "tr": ["title.icon"] } }
+  ]
+}
+```
+
+Only gaps are reported: a locale appears under a group only when it is missing at least one key, and a
+group is omitted entirely when every target is complete. A group whose file is absent for a locale
+surfaces as **all** the reference keys being missing for it. The same report is available in PHP via
+`Kurt\Modules\I18n\Support\MissingKeyReport::generate($reference, $targets = null)`.
+
+## Import / export
+
+Export and import a locale's translations as flat `key,value` rows (nested PHP keys are dot-paths,
+e.g. `title.icon`), in **CSV** or **JSON**.
+
+### Export
+
+`GET /i18n/api/export?locale=en&format=json` returns a downloadable file (`Content-Disposition:
+attachment`).
+
+- `locale` (required), `format` (`csv` | `json`, default `json`).
+- `type` (`json` | `php`) + `group` (required for `php`) — export a **single** group as `key,value` rows.
+- Omit `type` — export **all** groups for the locale; each row also carries `type` and `group` columns
+  so the flat list stays unambiguous.
+
+```json
+[ { "key": "greeting", "value": "Hi" }, { "key": "title.icon", "value": "Manage" } ]
+```
+
+The CSV form is the same rows with a `key,value` header (RFC 4180 quoting).
+
+### Import
+
+`POST /i18n/api/import` applies rows to one group + locale:
+
+```json
+{
+  "type": "php",
+  "group": "users",
+  "locale": "de",
+  "format": "csv",
+  "content": "key,value\ntitle.icon,Verwalten\n",
+  "baseHashes": { "de": "5f2a…" }
+}
+```
+
+The JSON `content` accepts either `[{ "key": …, "value": … }]` rows or a flat `{ "key": "value" }`
+object of scalars; CSV needs `key` and `value` columns in any order (extra columns are ignored). An
+import is **not** a raw overwrite: it is turned into a batch of `set` operations and applied through
+the same safe write path as edits — the exclusive per-group lock, timestamped backups, and the
+optimistic-hash conflict check all apply. Send the target locale's current hash as `baseHashes`
+(read it from a grid first); a stale hash returns `409`, and a malformed payload returns `422` with
+nothing written. `Kurt\Modules\I18n\Support\TranslationExporter` and `TranslationImporter` expose the
+same behaviour in PHP.
+
+## Machine translation
+
+The package ships a **seam**, not a provider. `POST /i18n/api/translate-missing` fills a target
+locale's missing keys in one group by machine-translating the reference values and writing the
+results through the safe write path:
+
+```json
+{ "type": "json", "reference": "en", "locale": "tr", "baseHashes": { "en": "…", "tr": "…" } }
+```
+
+It responds with the usual `changed` / `hashes` plus a `translated` list of the keys it filled. Only
+keys the target lacks are translated; existing values are left untouched.
+
+Translation goes through the `Kurt\Modules\I18n\Contracts\Translator` contract:
+
+```php
+interface Translator
+{
+    public function translate(string $text, string $from, string $to): string;
+}
+```
+
+The default binding is `NullTranslator`, which **throws** (`TranslatorNotConfiguredException`, surfaced
+as `501`) rather than silently writing the untranslated source. Wire your own DeepL/Google/LLM-backed
+implementation via config:
+
+```php
+// config/i18n.php
+'translator' => \App\Translation\DeepLTranslator::class,
+```
+
+```php
+namespace App\Translation;
+
+use Kurt\Modules\I18n\Contracts\Translator;
+
+final class DeepLTranslator implements Translator
+{
+    public function translate(string $text, string $from, string $to): string
+    {
+        // call your provider and return the translated string
+    }
+}
+```
+
+Any dependencies your implementation type-hints are resolved from the container.
 
 ## Configuration
 

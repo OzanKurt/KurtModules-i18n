@@ -6,8 +6,11 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Added
 
+- **Cross-group missing-key report**: `MissingKeyReport` support class and `GET /i18n/api/report/missing?reference={locale}` endpoint that list, across every JSON and PHP group at once, the reference keys absent from each target locale.
+- **Import / export**: `TranslationExporter` + `TranslationImporter` support classes and `GET /i18n/api/export` / `POST /i18n/api/import` endpoints to move a group (or all groups) for a locale to and from CSV or JSON `key,value` rows. Imports run through the existing safe write path (per-group lock, backups, optimistic-hash conflict) as a batch of `set` ops.
+- **Machine-translation seam**: a `Kurt\Modules\I18n\Contracts\Translator` contract with a `NullTranslator` default (throws until configured), bound via `config('i18n.translator')`, plus a `POST /i18n/api/translate-missing` action that fills a locale's missing keys from a reference through the configured translator and the safe write path. The consumer ships the real DeepL/Google/LLM implementation.
 - `TranslationsChanged` domain event, dispatched after a batch actually changes a file (with the file type, group, changed locales, applied ops, and actor when resolvable) for audit/webhook/cache extensions.
-- README section documenting the JSON API contract (endpoints, `baseHashes` + `ops` body, `409` conflict shape) and the concurrency semantics.
+- README sections documenting the JSON API contract (endpoints, `baseHashes` + `ops` body, `409` conflict shape), the concurrency semantics, the missing-key report, the import/export formats, and how to wire a `Translator`.
 
 ### Fixed
 
