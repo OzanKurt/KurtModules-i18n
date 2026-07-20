@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Kurt\Modules\I18n\Exceptions\InvalidTranslationFileException;
+use Kurt\Modules\I18n\Support\FileBackup;
 use Kurt\Modules\I18n\Support\JsonTranslationFile;
 
 beforeEach(function (): void {
@@ -35,6 +36,18 @@ it('reads a missing file as empty with a null hash', function (): void {
 
     expect($file->read())->toBe([])
         ->and($file->hash())->toBeNull();
+});
+
+it('writes a backup before overwriting a json file when configured', function (): void {
+    $backupDir = $this->dir.'/backups';
+    $path = $this->dir.'/en.json';
+    $file = new JsonTranslationFile($path, new FileBackup($backupDir));
+
+    $file->write(['a' => '1']);
+    $file->write(['a' => '2']);
+
+    expect(glob($backupDir.'/*.bak') ?: [])->toHaveCount(1)
+        ->and((new JsonTranslationFile($path))->read())->toBe(['a' => '2']);
 });
 
 it('throws on invalid json', function (): void {

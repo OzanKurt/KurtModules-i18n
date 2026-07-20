@@ -7,6 +7,8 @@ use Kurt\Modules\I18n\Support\LangPaths;
 use Kurt\Modules\I18n\Support\TranslationManager;
 use Kurt\Modules\I18n\Tests\TestCase;
 
+require_once __DIR__.'/opcache_shim.php';
+
 uses(TestCase::class)->in('Feature', 'Unit');
 
 /**
