@@ -83,7 +83,15 @@ abstract class TranslationFile
 
             throw $e;
         }
+
+        $this->afterReplace();
     }
+
+    /**
+     * Hook invoked after the target file has been atomically replaced. Subclasses
+     * may override it to react to a completed write (e.g. cache invalidation).
+     */
+    protected function afterReplace(): void {}
 
     private function replace(string $from, string $to): void
     {

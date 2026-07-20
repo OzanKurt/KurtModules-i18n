@@ -55,13 +55,15 @@ return [
     |
     | When enabled, a timestamped copy of a translation file is written before
     | it is overwritten. When the path is null it resolves to
-    | storage_path('i18n-backups').
+    | storage_path('i18n-backups'). "keep" caps how many backups are retained
+    | per source file; older ones are pruned after each write (0 = unlimited).
     |
     */
 
     'backups' => [
         'enabled' => true,
         'path' => null,
+        'keep' => 10,
     ],
 
     /*

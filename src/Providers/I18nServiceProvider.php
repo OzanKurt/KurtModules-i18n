@@ -36,7 +36,10 @@ final class I18nServiceProvider extends PackageServiceProvider
             $root = config('i18n.paths.root') ?: $app->langPath();
 
             $backup = config('i18n.backups.enabled', true)
-                ? new FileBackup((string) (config('i18n.backups.path') ?: $app->storagePath('i18n-backups')))
+                ? new FileBackup(
+                    (string) (config('i18n.backups.path') ?: $app->storagePath('i18n-backups')),
+                    (int) config('i18n.backups.keep', 10),
+                )
                 : null;
 
             return new TranslationManager(new LangPaths($root), new ArrayExporter, $backup);

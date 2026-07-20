@@ -41,6 +41,21 @@ final class PhpArrayFile extends TranslationFile
     }
 
     /**
+     * Drop any cached opcode for the file we just replaced so a runtime with
+     * opcache.validate_timestamps=0 does not keep serving stale translations.
+     *
+     * The guard mirrors PHP's own resolution order for the unqualified call
+     * below (namespaced function first, then the global one), which also lets
+     * the test suite stub the invalidation.
+     */
+    protected function afterReplace(): void
+    {
+        if (function_exists(__NAMESPACE__.'\\opcache_invalidate') || function_exists('opcache_invalidate')) {
+            opcache_invalidate($this->path, true);
+        }
+    }
+
+    /**
      * @return array<array-key, mixed>
      */
     private static function load(string $path): array

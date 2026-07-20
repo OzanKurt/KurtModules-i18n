@@ -6,6 +6,7 @@ use Kurt\Modules\I18n\Exceptions\InvalidTranslationFileException;
 use Kurt\Modules\I18n\Support\ArrayExporter;
 use Kurt\Modules\I18n\Support\FileBackup;
 use Kurt\Modules\I18n\Support\PhpArrayFile;
+use Kurt\Modules\I18n\Tests\OpcacheSpy;
 
 beforeEach(function (): void {
     $this->dir = i18n_tmp_dir();
@@ -50,6 +51,16 @@ it('writes a backup before overwriting when configured', function (): void {
 
     expect(glob($backupDir.'/*.bak') ?: [])->toHaveCount(1)
         ->and((new PhpArrayFile($path, $this->exporter))->read())->toBe(['a' => '2']);
+});
+
+it('invalidates the opcode cache for the file it just wrote', function (): void {
+    OpcacheSpy::reset();
+
+    $path = $this->dir.'/en/users.php';
+    (new PhpArrayFile($path, $this->exporter))->write(['a' => '1']);
+
+    expect(OpcacheSpy::$calls)->toHaveCount(1)
+        ->and(OpcacheSpy::$calls[0])->toBe(['path' => $path, 'force' => true]);
 });
 
 it('aborts the write and leaves the target intact when verification fails', function (): void {
