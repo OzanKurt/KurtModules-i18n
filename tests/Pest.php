@@ -2,14 +2,28 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\GenericUser;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Kurt\Modules\I18n\Support\ArrayExporter;
 use Kurt\Modules\I18n\Support\LangPaths;
 use Kurt\Modules\I18n\Support\TranslationManager;
+use Kurt\Modules\I18n\Tests\HeadlessTestCase;
 use Kurt\Modules\I18n\Tests\TestCase;
 
 require_once __DIR__.'/opcache_shim.php';
 
 uses(TestCase::class)->in('Feature', 'Unit');
+uses(HeadlessTestCase::class)->in('Http');
+
+/**
+ * A stand-in authenticated actor for exercising the auth-gated REST API. It is
+ * a bare Authenticatable (no database row needed); `actingAs()` simply resolves
+ * it as the current user so the "auth" middleware passes.
+ */
+function i18n_actor(): Authenticatable
+{
+    return new GenericUser(['id' => 1, 'name' => 'Translator']);
+}
 
 /**
  * Build a TranslationManager rooted at a specific directory (no backups), for

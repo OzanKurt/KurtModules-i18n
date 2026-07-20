@@ -14,7 +14,9 @@ final class UiController
     {
         return $view->make('i18n::app', [
             'bootstrap' => [
-                'prefix' => '/'.trim((string) config('i18n.route.prefix', 'i18n'), '/'),
+                // Base path of the JSON REST API the SPA talks to (registered
+                // from routes/api.php under the module's http prefix).
+                'prefix' => '/'.trim((string) config('i18n.http.prefix', 'api/i18n'), '/'),
                 'csrf' => csrf_token(),
                 'catalog' => $manager->catalog()->toArray(),
                 'strings' => (array) trans('i18n::messages'),

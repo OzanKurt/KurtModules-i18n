@@ -11,17 +11,24 @@ use Kurt\Modules\I18n\Support\TranslationManager;
 
 final class LocaleController extends ApiController
 {
+    /**
+     * List every locale known across the translation files on disk.
+     */
+    public function index(TranslationManager $manager): JsonResponse
+    {
+        return $this->respond($manager->catalog()->locales);
+    }
+
     public function store(AddLocaleRequest $request, TranslationManager $manager): JsonResponse
     {
         $group = $request->input('group');
 
-        return response()->json(
+        return $this->respondCreated(
             $manager->addLocale(
                 FileType::from((string) $request->input('type')),
                 (string) $request->input('locale'),
                 is_string($group) ? $group : null,
             ),
-            201,
         );
     }
 }

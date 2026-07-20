@@ -8,13 +8,22 @@ use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use InvalidArgumentException;
+use Kurt\Modules\Core\Http\Controllers\ApiController as CoreApiController;
 use Kurt\Modules\I18n\Exceptions\TranslationConflictException;
 use Kurt\Modules\I18n\Exceptions\TranslationPathException;
 use Kurt\Modules\I18n\Exceptions\TranslatorNotConfiguredException;
 use Kurt\Modules\I18n\Support\LangPaths;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
-abstract class ApiController
+/**
+ * Module base controller for the i18n REST API.
+ *
+ * Extends the Core API kit's controller so every endpoint shares the
+ * `{ "data": ..., "meta": ... }` success envelope and the `{ "message": ...,
+ * "errors": ... }` error envelope, and layers on the translation-specific
+ * request helpers used across the resource controllers.
+ */
+abstract class ApiController extends CoreApiController
 {
     /**
      * Parse and validate the `?locales=a,b,c` query parameter. Falls back to
@@ -69,20 +78,22 @@ abstract class ApiController
     }
 
     /**
-     * Run an apply() call and translate domain exceptions into HTTP responses.
+     * Run an apply() call and translate domain exceptions into the API error
+     * envelope, preserving the write path's 409 (conflict) / 501 (translator not
+     * configured) / 422 (bad path or argument) semantics.
      *
      * @param  Closure(): array{hashes: array<string, string|null>, changed: list<string>}  $apply
      */
     protected function save(Closure $apply): JsonResponse
     {
         try {
-            return response()->json($apply());
+            return $this->respond($apply());
         } catch (TranslationConflictException $e) {
-            return response()->json(['message' => 'conflict', 'locales' => $e->locales], 409);
+            return $this->fail('conflict', 409, ['locales' => $e->locales]);
         } catch (TranslatorNotConfiguredException $e) {
-            return response()->json(['message' => $e->getMessage()], 501);
+            return $this->fail($e->getMessage(), 501);
         } catch (TranslationPathException|InvalidArgumentException $e) {
-            return response()->json(['message' => $e->getMessage()], 422);
+            return $this->fail($e->getMessage(), 422);
         }
     }
 }

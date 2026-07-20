@@ -18,7 +18,7 @@ final class PhpGroupController extends ApiController
     {
         abort_unless(LangPaths::isValidGroupRef($group), 422, "Invalid group [{$group}].");
 
-        return response()->json(
+        return $this->respond(
             $manager->grid(FileType::Php, $group, $this->localesFromRequest($request, $manager))
         );
     }

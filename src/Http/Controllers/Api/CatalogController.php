@@ -11,6 +11,6 @@ final class CatalogController extends ApiController
 {
     public function __invoke(TranslationManager $manager): JsonResponse
     {
-        return response()->json($manager->catalog()->toArray());
+        return $this->respond($manager->catalog()->toArray());
     }
 }
