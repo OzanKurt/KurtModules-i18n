@@ -4,29 +4,47 @@ declare(strict_types=1);
 
 namespace Kurt\Modules\I18n\Support;
 
+use Closure;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
 use Kurt\Modules\I18n\Enums\FileType;
+use Kurt\Modules\I18n\Events\TranslationsChanged;
 use Kurt\Modules\I18n\Exceptions\TranslationConflictException;
+use Throwable;
 
 /**
  * Orchestrates reading and writing translation files for the HTTP layer.
  *
- * Builds locale-comparison grids, applies batches of {@see EditOperation}s with
- * optimistic-lock conflict detection, and creates new locale files. It never
- * touches a file outside the configured root (paths flow through {@see LangPaths}).
+ * Builds locale-comparison grids, applies batches of {@see EditOperation}s under
+ * an exclusive per-group lock with optimistic-hash conflict detection, and
+ * creates new locale files. It never touches a file outside the configured root
+ * (paths flow through {@see LangPaths}).
+ *
+ * The class is left non-final so a test can subclass it to exercise the
+ * concurrency guard via {@see self::beforeApplyWrites()}; treat it as final.
  */
-final class TranslationManager
+class TranslationManager
 {
+    private ?TranslationCatalog $catalog = null;
+
+    /**
+     * @param  Closure(): mixed|null  $actorResolver  resolves the actor behind a change (e.g. the authenticated user)
+     */
     public function __construct(
         private readonly LangPaths $paths,
         private readonly ArrayExporter $exporter,
         private readonly ?FileBackup $backup = null,
+        private readonly ?Dispatcher $events = null,
+        private readonly ?Closure $actorResolver = null,
     ) {}
 
     public function catalog(): TranslationCatalog
     {
-        return (new LocaleScanner($this->paths))->scan();
+        // Memoized for the lifetime of the instance so a single request that
+        // hits the catalog several times (e.g. the default-locales fallback
+        // plus a grid render) scans the tree once. Writes reset the memo.
+        return $this->catalog ??= (new LocaleScanner($this->paths))->scan();
     }
 
     /**
@@ -74,21 +92,42 @@ final class TranslationManager
     {
         $locales = array_keys($baseHashes);
 
+        // Hold an exclusive per-group lock across the whole read-modify-write.
+        // Without it two saves sharing the same base hashes could both pass the
+        // optimistic check and the last writer would silently clobber the first.
+        return $this->lock($type, $group)->withExclusive(
+            fn (): array => $this->applyLocked($type, $group, $baseHashes, $ops, $locales),
+        );
+    }
+
+    /**
+     * @param  array<string, string|null>  $baseHashes
+     * @param  list<EditOperation>  $ops
+     * @param  list<string>  $locales
+     * @return array{hashes: array<string, string|null>, changed: list<string>}
+     *
+     * @throws TranslationConflictException
+     */
+    private function applyLocked(FileType $type, ?string $group, array $baseHashes, array $ops, array $locales): array
+    {
         $files = [];
         $data = [];
         $original = [];
+        $snapshot = [];
         $stale = [];
 
         foreach ($locales as $locale) {
             $file = $this->file($type, $group, $locale);
+            $hash = $file->hash();
 
-            if (($baseHashes[$locale] ?? null) !== $file->hash()) {
+            if (($baseHashes[$locale] ?? null) !== $hash) {
                 $stale[] = $locale;
             }
 
             $files[$locale] = $file;
             $data[$locale] = $file->read();
-            $original[$locale] = serialize($data[$locale]);
+            $original[$locale] = $data[$locale];
+            $snapshot[$locale] = $hash;
         }
 
         if ($stale !== []) {
@@ -99,19 +138,125 @@ final class TranslationManager
             $this->applyOp($type, $op, $data, $locales);
         }
 
-        $changed = [];
+        // Test seam: lets a subclass simulate a second writer landing between the
+        // read above and the re-check below. No-op in production.
+        $this->beforeApplyWrites();
+
+        // Re-compare every file hash under the lock immediately before writing.
+        // A change here means a writer raced in after our read, so we abort with
+        // a conflict rather than overwriting their work.
+        $stale = [];
+
+        foreach ($locales as $locale) {
+            if ($files[$locale]->hash() !== $snapshot[$locale]) {
+                $stale[] = $locale;
+            }
+        }
+
+        if ($stale !== []) {
+            throw new TranslationConflictException($stale);
+        }
+
+        $changed = $this->commitBatch($files, $data, $original);
+
         $hashes = [];
 
         foreach ($locales as $locale) {
-            if (serialize($data[$locale]) !== $original[$locale]) {
-                $files[$locale]->write($data[$locale]);
-                $changed[] = $locale;
-            }
-
             $hashes[$locale] = $files[$locale]->hash();
         }
 
+        if ($changed !== []) {
+            $this->catalog = null;
+            $this->dispatchChanged($type, $group, $changed, $ops);
+        }
+
         return ['hashes' => $hashes, 'changed' => $changed];
+    }
+
+    /**
+     * Stage every changed locale, then swap them all in. Because the fallible
+     * work (encode + verify) happens for the whole batch before any file is
+     * touched, and a mid-swap failure rolls previously swapped files back to
+     * their original contents, the batch is all-or-nothing across locales.
+     *
+     * @param  array<string, TranslationFile>  $files
+     * @param  array<string, array<array-key, mixed>>  $data  post-edit data, keyed by locale
+     * @param  array<string, array<array-key, mixed>>  $original  pre-edit data, keyed by locale
+     * @return list<string> the locales whose files changed
+     */
+    private function commitBatch(array $files, array $data, array $original): array
+    {
+        $staged = [];
+
+        try {
+            foreach ($files as $locale => $file) {
+                if (serialize($data[$locale]) !== serialize($original[$locale])) {
+                    $staged[$locale] = $file->stage($data[$locale]);
+                }
+            }
+        } catch (Throwable $e) {
+            foreach ($staged as $locale => $temporary) {
+                $files[$locale]->discard($temporary);
+            }
+
+            throw $e;
+        }
+
+        $committed = [];
+
+        try {
+            foreach ($staged as $locale => $temporary) {
+                $files[$locale]->commit($temporary);
+                $committed[] = $locale;
+            }
+        } catch (Throwable $e) {
+            // Roll back any file already swapped in, and drop the rest.
+            foreach ($committed as $locale) {
+                try {
+                    $files[$locale]->write($original[$locale]);
+                } catch (Throwable) {
+                    // Best effort: keep restoring the remaining locales.
+                }
+            }
+
+            foreach ($staged as $locale => $temporary) {
+                if (! in_array($locale, $committed, true)) {
+                    $files[$locale]->discard($temporary);
+                }
+            }
+
+            throw $e;
+        }
+
+        return array_keys($staged);
+    }
+
+    /**
+     * Hook fired after the batch is read and edited in memory but before any
+     * file is written. A no-op by default; overridden only in tests.
+     */
+    protected function beforeApplyWrites(): void {}
+
+    private function lock(FileType $type, ?string $group): TranslationLock
+    {
+        $key = sha1($this->paths->root().'|'.$type->value.'|'.($group ?? ''));
+
+        return new TranslationLock(sys_get_temp_dir().'/i18n-locks/'.$key.'.lock');
+    }
+
+    /**
+     * @param  list<string>  $changedLocales
+     * @param  list<EditOperation>  $ops
+     */
+    private function dispatchChanged(FileType $type, ?string $group, array $changedLocales, array $ops): void
+    {
+        if ($this->events === null) {
+            return;
+        }
+
+        $actor = $this->actorResolver !== null ? ($this->actorResolver)() : null;
+
+        $this->events->dispatch(new TranslationsChanged($type, $group, $changedLocales, $ops, $actor));
     }
 
     /**
@@ -123,6 +268,7 @@ final class TranslationManager
 
         if (! $file->exists()) {
             $file->write([]);
+            $this->catalog = null;
         }
 
         return ['locale' => $locale, 'hash' => $file->hash()];

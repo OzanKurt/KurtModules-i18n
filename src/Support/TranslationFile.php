@@ -57,16 +57,35 @@ abstract class TranslationFile
      */
     public function write(array $data): void
     {
+        $temporary = $this->stage($data);
+
+        try {
+            $this->commit($temporary);
+        } catch (Throwable $e) {
+            $this->discard($temporary);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Encode, write, and self-verify a temporary file next to the target without
+     * touching the target itself. Returns the temporary path, ready to be handed
+     * to {@see self::commit()} (to swap it in) or {@see self::discard()} (to drop
+     * it). Splitting the write in two lets a caller stage several files, verify
+     * them all, and only then swap them in — so a multi-file batch never lands
+     * half-applied.
+     *
+     * @param  array<array-key, mixed>  $data
+     */
+    public function stage(array $data): string
+    {
         $contents = $this->encode($data);
 
         $directory = dirname($this->path);
 
         if (! is_dir($directory) && ! @mkdir($directory, 0775, true) && ! is_dir($directory)) {
             throw new RuntimeException("Unable to create directory [{$directory}].");
-        }
-
-        if ($this->backup !== null && $this->exists()) {
-            $this->backup->backup($this->path);
         }
 
         $temporary = $this->path.'.tmp'.bin2hex(random_bytes(4));
@@ -77,14 +96,42 @@ abstract class TranslationFile
 
         try {
             $this->verify($temporary, $data);
-            $this->replace($temporary, $this->path);
         } catch (Throwable $e) {
             @unlink($temporary);
 
             throw $e;
         }
 
+        return $temporary;
+    }
+
+    /**
+     * Atomically swap a previously {@see self::stage()}d temporary file into the
+     * target, backing up the current contents first when a backup is configured.
+     */
+    public function commit(string $temporary): void
+    {
+        if ($this->backup !== null && $this->exists()) {
+            $this->backup->backup($this->path);
+        }
+
+        try {
+            $this->replace($temporary, $this->path);
+        } catch (Throwable $e) {
+            $this->discard($temporary);
+
+            throw $e;
+        }
+
         $this->afterReplace();
+    }
+
+    /**
+     * Drop a staged temporary file that will not be committed.
+     */
+    public function discard(string $temporary): void
+    {
+        @unlink($temporary);
     }
 
     /**
