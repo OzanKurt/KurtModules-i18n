@@ -6,11 +6,17 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ### Added
 
-- **Cross-group missing-key report**: `MissingKeyReport` support class and `GET /i18n/api/report/missing?reference={locale}` endpoint that list, across every JSON and PHP group at once, the reference keys absent from each target locale.
-- **Import / export**: `TranslationExporter` + `TranslationImporter` support classes and `GET /i18n/api/export` / `POST /i18n/api/import` endpoints to move a group (or all groups) for a locale to and from CSV or JSON `key,value` rows. Imports run through the existing safe write path (per-group lock, backups, optimistic-hash conflict) as a batch of `set` ops.
-- **Machine-translation seam**: a `Kurt\Modules\I18n\Contracts\Translator` contract with a `NullTranslator` default (throws until configured), bound via `config('i18n.translator')`, plus a `POST /i18n/api/translate-missing` action that fills a locale's missing keys from a reference through the configured translator and the safe write path. The consumer ships the real DeepL/Google/LLM implementation.
+- **REST API on the Core API kit**: the JSON API is now built on `ozankurt/laravel-modules-core` `^2.2`. It registers under `config('i18n.http.prefix')` (default `api/i18n`) via `registerModuleApi()`, responses use the `{ data, meta }` envelope, and it is throttled by the `i18n-api` limiter. New resource endpoints round out the surface: `GET /api/i18n/groups` (list all translation groups), `GET /api/i18n/locales` (list locales), and single-key `GET`/`PUT`/`DELETE /api/i18n/translations` over the same safe write path.
+- **Cross-group missing-key report**: `MissingKeyReport` support class and `GET /api/i18n/report/missing?reference={locale}` endpoint that list, across every JSON and PHP group at once, the reference keys absent from each target locale.
+- **Import / export**: `TranslationExporter` + `TranslationImporter` support classes and `GET /api/i18n/export` / `POST /api/i18n/import` endpoints to move a group (or all groups) for a locale to and from CSV or JSON `key,value` rows. Imports run through the existing safe write path (per-group lock, backups, optimistic-hash conflict) as a batch of `set` ops.
+- **Machine-translation seam**: a `Kurt\Modules\I18n\Contracts\Translator` contract with a `NullTranslator` default (throws until configured), bound via `config('i18n.translator')`, plus a `POST /api/i18n/translate-missing` action that fills a locale's missing keys from a reference through the configured translator and the safe write path. The consumer ships the real DeepL/Google/LLM implementation.
 - `TranslationsChanged` domain event, dispatched after a batch actually changes a file (with the file type, group, changed locales, applied ops, and actor when resolvable) for audit/webhook/cache extensions.
 - README sections documenting the JSON API contract (endpoints, `baseHashes` + `ops` body, `409` conflict shape), the concurrency semantics, the missing-key report, the import/export formats, and how to wire a `Translator`.
+
+### Changed
+
+- **Breaking — HTTP surface is now safe-by-default and gated.** The always-on `/i18n/api/*` routes (`web` middleware + `viewI18n` gate) are replaced by the Core API kit. Nothing is registered until `I18N_HTTP_MODE` is set to `api` (JSON API) or `ui` (API + the bundled UI shell); `headless` is the default. Every endpoint — reads and writes alike — now requires authentication (`config('i18n.http.auth_middleware')`) plus the `i18n.manageTranslations` gate, and lives under `api/i18n` instead of `i18n/api`. Response bodies are wrapped in the `{ data, meta }` envelope, and the `409` conflict payload moves the stale locales under `errors.locales`. See [UPGRADE-2.0.md](UPGRADE-2.0.md).
+- Requires `ozankurt/laravel-modules-core` `^2.2` (was `^2.0`).
 
 ### Fixed
 

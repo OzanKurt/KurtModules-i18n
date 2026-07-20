@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-use Illuminate\Support\Facades\Gate;
 use Kurt\Modules\I18n\Contracts\Translator;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
 beforeEach(function (): void {
     $this->root = i18n_tmp_dir();
     $this->app->instance(TranslationManager::class, i18n_manager($this->root));
-    Gate::define('viewI18n', fn ($user = null): bool => true);
+    config()->set('i18n.enabled_environments', ['testing']);
+    $this->actingAs(i18n_actor());
 });
 
 afterEach(function (): void {
@@ -35,16 +35,16 @@ it('translates the missing keys for a locale from the reference', function (): v
 
     file_put_contents($this->root.'/en.json', json_encode(['greeting' => 'Hi', 'bye' => 'Bye']));
     file_put_contents($this->root.'/tr.json', json_encode(['greeting' => 'Selam']));
-    $base = $this->getJson('/i18n/api/json?locales=en,tr')->json('hashes');
+    $base = $this->getJson('/api/i18n/json?locales=en,tr')->json('data.hashes');
 
-    $this->postJson('/i18n/api/translate-missing', [
+    $this->postJson('/api/i18n/translate-missing', [
         'type' => 'json',
         'reference' => 'en',
         'locale' => 'tr',
         'baseHashes' => $base,
     ])->assertOk()
-        ->assertJsonPath('translated.0', 'bye')
-        ->assertJsonPath('changed.0', 'tr');
+        ->assertJsonPath('data.translated.0', 'bye')
+        ->assertJsonPath('data.changed.0', 'tr');
 
     expect(json_decode((string) file_get_contents($this->root.'/tr.json'), true))
         ->toBe(['greeting' => 'Selam', 'bye' => 'BYE']);
@@ -53,9 +53,9 @@ it('translates the missing keys for a locale from the reference', function (): v
 it('returns 501 when no translator is configured and keys are missing', function (): void {
     // Default binding is the NullTranslator, which refuses to translate.
     file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
-    $base = $this->getJson('/i18n/api/json?locales=en,tr')->json('hashes');
+    $base = $this->getJson('/api/i18n/json?locales=en,tr')->json('data.hashes');
 
-    $this->postJson('/i18n/api/translate-missing', [
+    $this->postJson('/api/i18n/translate-missing', [
         'type' => 'json',
         'reference' => 'en',
         'locale' => 'tr',
@@ -64,7 +64,7 @@ it('returns 501 when no translator is configured and keys are missing', function
 });
 
 it('rejects translating a locale into itself', function (): void {
-    $this->postJson('/i18n/api/translate-missing', [
+    $this->postJson('/api/i18n/translate-missing', [
         'type' => 'json',
         'reference' => 'en',
         'locale' => 'en',
@@ -77,7 +77,7 @@ it('returns 409 when a base hash is stale', function (): void {
 
     file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
 
-    $this->postJson('/i18n/api/translate-missing', [
+    $this->postJson('/api/i18n/translate-missing', [
         'type' => 'json',
         'reference' => 'en',
         'locale' => 'tr',

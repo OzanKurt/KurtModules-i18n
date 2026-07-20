@@ -15,7 +15,7 @@ final class JsonTranslationController extends ApiController
 {
     public function show(Request $request, TranslationManager $manager): JsonResponse
     {
-        return response()->json(
+        return $this->respond(
             $manager->grid(FileType::Json, null, $this->localesFromRequest($request, $manager))
         );
     }

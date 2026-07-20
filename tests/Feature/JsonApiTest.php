@@ -3,14 +3,14 @@
 declare(strict_types=1);
 
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Kurt\Modules\I18n\Events\TranslationsChanged;
 use Kurt\Modules\I18n\Support\TranslationManager;
 
 beforeEach(function (): void {
     $this->root = i18n_tmp_dir();
     $this->app->instance(TranslationManager::class, i18n_manager($this->root));
-    Gate::define('viewI18n', fn ($user = null): bool => true);
+    config()->set('i18n.enabled_environments', ['testing']);
+    $this->actingAs(i18n_actor());
 });
 
 afterEach(function (): void {
@@ -21,7 +21,7 @@ it('returns a json grid with the locale union', function (): void {
     file_put_contents($this->root.'/en.json', json_encode(['greeting' => 'Hi']));
     file_put_contents($this->root.'/tr.json', json_encode([]));
 
-    $data = $this->getJson('/i18n/api/json?locales=en,tr')->assertOk()->json();
+    $data = $this->getJson('/api/i18n/json?locales=en,tr')->assertOk()->json('data');
 
     expect($data['keys'])->toBe(['greeting'])
         ->and($data['rows']['greeting']['en'])->toBe('Hi')
@@ -30,12 +30,12 @@ it('returns a json grid with the locale union', function (): void {
 
 it('applies a set op and writes the json file', function (): void {
     file_put_contents($this->root.'/en.json', json_encode(['greeting' => 'Hi']));
-    $base = $this->getJson('/i18n/api/json?locales=en')->json('hashes');
+    $base = $this->getJson('/api/i18n/json?locales=en')->json('data.hashes');
 
-    $this->patchJson('/i18n/api/json', [
+    $this->patchJson('/api/i18n/json', [
         'baseHashes' => $base,
         'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'bye', 'value' => 'Bye']],
-    ])->assertOk()->assertJsonPath('changed.0', 'en');
+    ])->assertOk()->assertJsonPath('data.changed.0', 'en');
 
     expect(json_decode((string) file_get_contents($this->root.'/en.json'), true))
         ->toBe(['greeting' => 'Hi', 'bye' => 'Bye']);
@@ -43,9 +43,9 @@ it('applies a set op and writes the json file', function (): void {
 
 it('deletes and renames keys in one batch', function (): void {
     file_put_contents($this->root.'/en.json', json_encode(['a' => '1', 'b' => '2']));
-    $base = $this->getJson('/i18n/api/json?locales=en')->json('hashes');
+    $base = $this->getJson('/api/i18n/json?locales=en')->json('data.hashes');
 
-    $this->patchJson('/i18n/api/json', [
+    $this->patchJson('/api/i18n/json', [
         'baseHashes' => $base,
         'ops' => [
             ['op' => 'delete', 'key' => 'a'],
@@ -59,10 +59,10 @@ it('deletes and renames keys in one batch', function (): void {
 it('returns 409 when a base hash is stale', function (): void {
     file_put_contents($this->root.'/en.json', json_encode(['a' => '1']));
 
-    $this->patchJson('/i18n/api/json', [
+    $this->patchJson('/api/i18n/json', [
         'baseHashes' => ['en' => 'stale'],
         'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'a', 'value' => '2']],
-    ])->assertStatus(409)->assertJsonPath('locales.0', 'en');
+    ])->assertStatus(409)->assertJsonPath('errors.locales.0', 'en');
 });
 
 it('dispatches TranslationsChanged through the container-wired manager', function (): void {
@@ -74,9 +74,9 @@ it('dispatches TranslationsChanged through the container-wired manager', functio
     $this->app->forgetInstance(TranslationManager::class);
 
     file_put_contents($this->root.'/en.json', json_encode(['greeting' => 'Hi']));
-    $base = $this->getJson('/i18n/api/json?locales=en')->json('hashes');
+    $base = $this->getJson('/api/i18n/json?locales=en')->json('data.hashes');
 
-    $this->patchJson('/i18n/api/json', [
+    $this->patchJson('/api/i18n/json', [
         'baseHashes' => $base,
         'ops' => [['op' => 'set', 'locale' => 'en', 'key' => 'bye', 'value' => 'Bye']],
     ])->assertOk();
@@ -88,7 +88,7 @@ it('dispatches TranslationsChanged through the container-wired manager', functio
 });
 
 it('validates the ops payload', function (): void {
-    $this->patchJson('/i18n/api/json', [
+    $this->patchJson('/api/i18n/json', [
         'baseHashes' => [],
         'ops' => [['op' => 'nope']],
     ])->assertStatus(422);

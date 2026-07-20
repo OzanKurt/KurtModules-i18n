@@ -23,7 +23,7 @@
     };
 
     async function api(method, path, body) {
-        const res = await fetch(`${PREFIX}/api${path}`, {
+        const res = await fetch(`${PREFIX}${path}`, {
             method,
             credentials: 'same-origin',
             headers: {
@@ -39,6 +39,11 @@
             data = await res.json();
         } catch (e) {
             data = null;
+        }
+        // The API kit wraps successful payloads in a `{ data, meta }` envelope;
+        // unwrap it so callers keep seeing the bare payload they expect.
+        if (res.ok && data && typeof data === 'object' && 'data' in data) {
+            data = data.data;
         }
         return { ok: res.ok, status: res.status, data };
     }

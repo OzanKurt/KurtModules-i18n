@@ -29,5 +29,10 @@ abstract class TestCase extends PackageTestCase
         // The UI routes run through the "web" middleware group, which encrypts
         // cookies and therefore needs an application key.
         $app['config']->set('app.key', 'base64:'.base64_encode(str_repeat('i18n-testing-key', 2)));
+
+        // "ui" mode is a superset of "api": it registers the REST API (routes/
+        // api.php) *and* the bundled UI shell, so both surfaces are exercised.
+        // The dedicated headless test overrides this to assert nothing registers.
+        $app['config']->set('i18n.http.mode', 'ui');
     }
 }

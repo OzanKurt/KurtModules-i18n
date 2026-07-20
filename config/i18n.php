@@ -36,6 +36,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HTTP (REST API)
+    |--------------------------------------------------------------------------
+    |
+    | The config-convention block consumed by the Core API kit. The JSON REST
+    | API under "prefix" is registered only when "mode" is "api" or "ui" — it is
+    | "headless" (nothing registered) by default, so a consumer opts in
+    | explicitly via I18N_HTTP_MODE. Translation management is an admin surface:
+    | every endpoint (reads and writes alike) runs the "auth_middleware" and the
+    | "i18n.manageTranslations" gate. "mode" = "ui" additionally serves the
+    | bundled translation-manager UI shell under the "route" prefix above.
+    |
+    */
+
+    'http' => [
+        'mode' => env('I18N_HTTP_MODE', 'headless'),
+        'prefix' => 'api/i18n',
+        'middleware' => ['api'],
+        'auth_middleware' => ['auth'],
+        'rate_limit' => '60,1',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Paths
     |--------------------------------------------------------------------------
     |

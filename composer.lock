@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f19653bbba9561878c80a232d5086ad5",
+    "content-hash": "208995ce29a87340e2e08f371dfaca48",
     "packages": [
         {
             "name": "brick/math",
@@ -2414,23 +2414,23 @@
         },
         {
             "name": "ozankurt/laravel-modules-core",
-            "version": "v2.0.0",
+            "version": "v2.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/OzanKurt/KurtModules-Core.git",
-                "reference": "fb3ae8c4d7394a928e419038fd6f0f299983a562"
+                "reference": "f8494de8a22dbd971e1b34d609e6449ea860727d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/OzanKurt/KurtModules-Core/zipball/fb3ae8c4d7394a928e419038fd6f0f299983a562",
-                "reference": "fb3ae8c4d7394a928e419038fd6f0f299983a562",
+                "url": "https://api.github.com/repos/OzanKurt/KurtModules-Core/zipball/f8494de8a22dbd971e1b34d609e6449ea860727d",
+                "reference": "f8494de8a22dbd971e1b34d609e6449ea860727d",
                 "shasum": ""
             },
             "require": {
-                "illuminate/contracts": "^12.0 || ^13.0",
-                "illuminate/database": "^12.0 || ^13.0",
-                "illuminate/support": "^12.0 || ^13.0",
-                "php": "^8.4",
+                "illuminate/contracts": "^12.0",
+                "illuminate/database": "^12.0",
+                "illuminate/support": "^12.0",
+                "php": "^8.3",
                 "spatie/laravel-package-tools": "^1.92"
             },
             "require-dev": {
@@ -2494,10 +2494,10 @@
                 "laravel"
             ],
             "support": {
-                "source": "https://github.com/OzanKurt/KurtModules-Core/tree/v2.0.0",
+                "source": "https://github.com/OzanKurt/KurtModules-Core/tree/v2.2.0",
                 "issues": "https://github.com/OzanKurt/KurtModules-Core/issues"
             },
-            "time": "2026-05-28T14:37:06+00:00"
+            "time": "2026-07-20T20:48:49+00:00"
         },
         {
             "name": "phpoption/phpoption",
@@ -10240,7 +10240,7 @@
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
-        "php": "^8.4"
+        "php": "^8.3"
     },
     "platform-dev": {},
     "plugin-api-version": "2.6.0"

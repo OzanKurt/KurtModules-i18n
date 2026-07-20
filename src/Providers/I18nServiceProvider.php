@@ -7,7 +7,9 @@ namespace Kurt\Modules\I18n\Providers;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Kurt\Modules\Core\Http\HttpMode;
 use Kurt\Modules\Core\Providers\PackageServiceProvider;
 use Kurt\Modules\I18n\Contracts\Translator;
 use Kurt\Modules\I18n\Http\Middleware\Authorize;
@@ -72,6 +74,8 @@ final class I18nServiceProvider extends PackageServiceProvider
 
     public function packageBooted(): void
     {
+        parent::packageBooted();
+
         $this->loadViewsFrom(__DIR__.'/../../resources/views', 'i18n');
         $this->loadTranslationsFrom(__DIR__.'/../../lang', 'i18n');
 
@@ -79,11 +83,40 @@ final class I18nServiceProvider extends PackageServiceProvider
             __DIR__.'/../../resources/dist' => public_path('vendor/i18n'),
         ], 'i18n-assets');
 
-        $this->registerRoutes();
+        $this->registerApiGate();
+        $this->registerModuleApi(__DIR__.'/../../routes/api.php');
+        $this->registerUi();
     }
 
-    private function registerRoutes(): void
+    /**
+     * The authorization gate every REST API endpoint (reads and writes)
+     * enforces. It grants access whenever the current environment is one of the
+     * module's "enabled_environments" (so local admin tooling works out of the
+     * box) and otherwise defers to the consumer, who overrides this gate in
+     * their own AuthServiceProvider to open the admin surface in production.
+     */
+    private function registerApiGate(): void
     {
+        Gate::define('i18n.manageTranslations', function (mixed $user = null): bool {
+            /** @var list<string> $environments */
+            $environments = (array) config('i18n.enabled_environments', ['local']);
+
+            return $this->app->environment($environments);
+        });
+    }
+
+    /**
+     * Register the bundled UI shell — only in "ui" mode, so headless/api modes
+     * ship no HTML surface. The shell runs under the "web" middleware group and
+     * the same environment/gate guard the manager has always used; the SPA it
+     * boots talks to the REST API registered by registerModuleApi().
+     */
+    private function registerUi(): void
+    {
+        if (! HttpMode::forModule('i18n')->is(HttpMode::Ui)) {
+            return;
+        }
+
         /** @var list<string> $middleware */
         $middleware = (array) config('i18n.route.middleware', ['web']);
 

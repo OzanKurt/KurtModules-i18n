@@ -18,7 +18,7 @@ final class MissingKeyReportController extends ApiController
         abort_if($reference === '', 422, 'A reference locale is required.');
         abort_unless(LangPaths::isValidLocale($reference), 422, "Invalid locale [{$reference}].");
 
-        return response()->json(
+        return $this->respond(
             $report->generate($reference, $this->optionalLocalesFromRequest($request))
         );
     }
