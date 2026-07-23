@@ -32,7 +32,7 @@
     }
   },
   "repositories": {
-    "core": { "type": "vcs", "url": "https://github.com/OzanKurt/KurtModules-Core" }
+    "core": { "type": "vcs", "url": "https://github.com/OzanKurt/laravel-modules-core" }
   },
   "config": {
     "sort-packages": true,
