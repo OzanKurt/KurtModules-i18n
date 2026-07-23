@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Kurt\Modules\Core\Http\HttpMode;
+use Kurt\Modules\Core\Modules\ModuleManifest;
 use Kurt\Modules\Core\Providers\PackageServiceProvider;
 use Kurt\Modules\I18n\Contracts\Translator;
 use Kurt\Modules\I18n\Http\Middleware\Authorize;
@@ -25,6 +26,13 @@ final class I18nServiceProvider extends PackageServiceProvider
     protected function module(): string
     {
         return 'i18n';
+    }
+
+    protected function moduleManifest(): ?ModuleManifest
+    {
+        return ModuleManifest::make('i18n')
+            ->name('i18n')
+            ->description('Self-hosted translation-file manager for Laravel: edit JSON and PHP array lang files (including deeply nested keys) through a Tailwind UI.');
     }
 
     public function configurePackage(Package $package): void
